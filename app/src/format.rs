@@ -56,6 +56,14 @@ impl Format {
     pub fn has_header(self) -> bool {
         false
     }
+
+    /// Whether record boundaries must honour double-quoted fields. CSV and TSV
+    /// allow a quoted cell to span multiple physical lines (RFC 4180), so a
+    /// bare `\n` does not always end a record. NDJSON and plain text always
+    /// break on every newline.
+    pub fn quote_aware(self) -> bool {
+        matches!(self, Format::Csv | Format::Tsv)
+    }
 }
 
 /// Split a single delimited line into fields, honouring quoted values.

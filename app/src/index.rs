@@ -9,7 +9,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use memchr::{memchr, memchr_iter};
+use memchr::{memchr, memchr2, memchr_iter};
 use rayon::prelude::*;
 
 /// Number of lines between stored checkpoints.
@@ -21,6 +21,38 @@ pub struct LineIndex {
     sample: u64,
     pub total_lines: u64,
     pub file_len: u64,
+    /// When set, a `\n` only ends a record if it is not inside a double-quoted
+    /// field. Used for CSV/TSV, where a quoted cell may span several physical
+    /// lines (RFC 4180). When clear, every `\n` is a line break (NDJSON/TXT).
+    quote_aware: bool,
+}
+
+/// Starting at `start` — which must be the beginning of a logical record and
+/// therefore outside any quoted field — return the byte index of the `\n` that
+/// terminates the record, or `data.len()` if the record runs to end of file.
+/// Newlines that appear inside a `"`-quoted field are skipped. RFC 4180
+/// escaped quotes (`""`) are handled naturally because each `"` toggles the
+/// in-field state and the two characters are always adjacent.
+fn record_end(data: &[u8], start: usize) -> usize {
+    let mut pos = start;
+    let mut inside = false;
+    while pos < data.len() {
+        match memchr2(b'"', b'\n', &data[pos..]) {
+            Some(rel) => {
+                let abs = pos + rel;
+                if data[abs] == b'"' {
+                    inside = !inside;
+                    pos = abs + 1;
+                } else if inside {
+                    pos = abs + 1; // embedded newline inside a quoted field
+                } else {
+                    return abs; // genuine record terminator
+                }
+            }
+            None => return data.len(),
+        }
+    }
+    data.len()
 }
 
 impl LineIndex {
@@ -28,7 +60,7 @@ impl LineIndex {
     ///
     /// `progress` is updated with the number of bytes scanned so the UI can
     /// render a progress bar while indexing a huge file on a background thread.
-    pub fn build(data: &[u8], sample: u64, progress: &AtomicU64) -> Self {
+    pub fn build(data: &[u8], sample: u64, quote_aware: bool, progress: &AtomicU64) -> Self {
         let len = data.len();
         if len == 0 {
             return LineIndex {
@@ -36,6 +68,7 @@ impl LineIndex {
                 sample,
                 total_lines: 0,
                 file_len: 0,
+                quote_aware,
             };
         }
 
@@ -54,6 +87,10 @@ impl LineIndex {
             })
             .filter(|(s, e)| s < e)
             .collect();
+
+        if quote_aware {
+            return Self::build_quote_aware(data, sample, &bounds, progress);
+        }
 
         // Pass 1: count newlines per chunk (drives the progress bar).
         let counts: Vec<u64> = bounds
@@ -112,6 +149,135 @@ impl LineIndex {
             sample,
             total_lines,
             file_len: len as u64,
+            quote_aware: false,
+        }
+    }
+
+    /// Quote-aware variant of [`build`](Self::build) for CSV/TSV. A `\n` ends a
+    /// record only when it is *not* inside a double-quoted field, so cells that
+    /// contain embedded newlines stay on a single logical row.
+    ///
+    /// Quote parity is additive, so it can still be computed in parallel: count
+    /// the `"` characters in each chunk, prefix-sum them, and the parity of the
+    /// count preceding a chunk tells us whether that chunk starts inside a
+    /// quoted field. Every logical line begins right after a record-terminating
+    /// newline and is therefore always outside quotes, which is why checkpoints
+    /// need no extra state.
+    fn build_quote_aware(
+        data: &[u8],
+        sample: u64,
+        bounds: &[(usize, usize)],
+        progress: &AtomicU64,
+    ) -> Self {
+        let len = data.len();
+
+        // Pass 1: count quote characters per chunk to derive the quote parity
+        // at every chunk boundary.
+        let quote_counts: Vec<u64> = bounds
+            .par_iter()
+            .map(|&(s, e)| {
+                let c = memchr_iter(b'"', &data[s..e]).count() as u64;
+                progress.fetch_add(((e - s) as u64) / 3, Ordering::Relaxed);
+                c
+            })
+            .collect();
+
+        let mut quote_base = vec![0u64; bounds.len()];
+        let mut q_run = 0u64;
+        for i in 0..bounds.len() {
+            quote_base[i] = q_run;
+            q_run += quote_counts[i];
+        }
+        let total_quotes = q_run;
+
+        // Pass 2: count record-terminating newlines per chunk, honouring the
+        // quote parity inherited at the chunk's start.
+        let rec_counts: Vec<u64> = bounds
+            .par_iter()
+            .enumerate()
+            .map(|(ci, &(s, e))| {
+                let mut inside = (quote_base[ci] & 1) == 1;
+                let mut pos = s;
+                let mut count = 0u64;
+                while pos < e {
+                    match memchr2(b'"', b'\n', &data[pos..e]) {
+                        Some(rel) => {
+                            let abs = pos + rel;
+                            if data[abs] == b'"' {
+                                inside = !inside;
+                            } else if !inside {
+                                count += 1;
+                            }
+                            pos = abs + 1;
+                        }
+                        None => break,
+                    }
+                }
+                progress.fetch_add(((e - s) as u64) / 3, Ordering::Relaxed);
+                count
+            })
+            .collect();
+
+        let mut rec_base = vec![0u64; bounds.len()];
+        let mut r_run = 0u64;
+        for i in 0..bounds.len() {
+            rec_base[i] = r_run;
+            r_run += rec_counts[i];
+        }
+        let total_terminators = r_run;
+
+        // Pass 3: record the start offset of every `sample`-th logical line.
+        let per_chunk: Vec<Vec<u64>> = bounds
+            .par_iter()
+            .enumerate()
+            .map(|(ci, &(s, e))| {
+                let mut inside = (quote_base[ci] & 1) == 1;
+                let mut pos = s;
+                let mut local = 0u64;
+                let mut out = Vec::new();
+                while pos < e {
+                    match memchr2(b'"', b'\n', &data[pos..e]) {
+                        Some(rel) => {
+                            let abs = pos + rel;
+                            if data[abs] == b'"' {
+                                inside = !inside;
+                            } else if !inside {
+                                // This newline terminates record `rec_base + local`,
+                                // so the next logical line starts at `abs + 1`.
+                                let line_no = rec_base[ci] + local + 1;
+                                local += 1;
+                                if line_no % sample == 0 {
+                                    out.push((abs + 1) as u64);
+                                }
+                            }
+                            pos = abs + 1;
+                        }
+                        None => break,
+                    }
+                }
+                progress.fetch_add(((e - s) as u64) / 3, Ordering::Relaxed);
+                out
+            })
+            .collect();
+
+        let mut checkpoints = Vec::with_capacity((total_terminators / sample) as usize + 1);
+        checkpoints.push(0u64); // line 0 always starts at offset 0
+        for cv in per_chunk {
+            checkpoints.extend(cv);
+        }
+
+        // The file ends with a complete record only when its last byte is a
+        // newline *and* that newline is not inside an (unterminated) quoted
+        // field. Otherwise the trailing bytes form one extra logical line.
+        let ends_clean = data[len - 1] == b'\n' && (total_quotes & 1) == 0;
+        let total_lines = total_terminators + (!ends_clean as u64);
+
+        LineIndex {
+            checkpoints,
+            sample,
+            total_lines,
+            file_len: len as u64,
+            quote_aware: true,
         }
     }
 
@@ -125,6 +291,19 @@ impl LineIndex {
         let base_line = ci as u64 * self.sample;
         let mut start = self.checkpoints[ci] as usize;
         let mut skip = line - base_line;
+
+        if self.quote_aware {
+            while skip > 0 {
+                let e = record_end(data, start);
+                if e >= data.len() {
+                    return (data.len(), data.len());
+                }
+                start = e + 1;
+                skip -= 1;
+            }
+            let end = record_end(data, start);
+            return (start, end);
+        }
 
         while skip > 0 {
             match memchr(b'\n', &data[start..]) {
@@ -171,15 +350,124 @@ impl LineIndex {
         };
         let mut line = ci as u64 * self.sample;
         let mut pos = self.checkpoints[ci] as usize;
-        while pos < offset {
-            match memchr(b'\n', &data[pos..offset]) {
-                Some(p) => {
-                    line += 1;
-                    pos += p + 1;
+        if self.quote_aware {
+            loop {
+                let e = record_end(data, pos);
+                if offset <= e || e >= data.len() {
+                    break;
                 }
-                None => break,
+                line += 1;
+                pos = e + 1;
+            }
+        } else {
+            while pos < offset {
+                match memchr(b'\n', &data[pos..offset]) {
+                    Some(p) => {
+                        line += 1;
+                        pos += p + 1;
+                    }
+                    None => break,
+                }
             }
         }
         line.min(self.total_lines.saturating_sub(1))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build(data: &[u8], quote_aware: bool) -> LineIndex {
+        // Use a tiny sample so checkpoint logic is exercised even on small input.
+        LineIndex::build(data, 2, quote_aware, &AtomicU64::new(0))
+    }
+
+    fn lines(idx: &LineIndex, data: &[u8]) -> Vec<String> {
+        (0..idx.total_lines)
+            .map(|i| String::from_utf8_lossy(idx.line_bytes(data, i)).into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn quoted_embedded_newline_is_one_row() {
+        let data = b"id,note\n1,\"hello\nworld\"\n2,plain\n";
+        let idx = build(data, true);
+        assert_eq!(idx.total_lines, 3);
+        assert_eq!(
+            lines(&idx, data),
+            vec!["id,note", "1,\"hello\nworld\"", "2,plain"]
+        );
+    }
+
+    #[test]
+    fn escaped_quotes_and_multiple_embedded_newlines() {
+        // A quoted cell containing escaped quotes ("") and two newlines.
+        let data = b"a,\"x\"\"y\nz\nw\",b\nlast,row\n";
+        let idx = build(data, true);
+        assert_eq!(idx.total_lines, 2);
+        assert_eq!(
+            lines(&idx, data),
+            vec!["a,\"x\"\"y\nz\nw\",b", "last,row"]
+        );
+    }
+
+    #[test]
+    fn crlf_quoted_newline() {
+        let data = b"1,\"two\r\nlines\"\r\n2,ok\r\n";
+        let idx = build(data, true);
+        assert_eq!(idx.total_lines, 2);
+        // line_bytes trims the terminating CR; the embedded CRLF is preserved.
+        assert_eq!(
+            lines(&idx, data),
+            vec!["1,\"two\r\nlines\"", "2,ok"]
+        );
+    }
+
+    #[test]
+    fn unterminated_quote_at_eof_is_one_row() {
+        let data = b"1,ok\n2,\"open\nstill open\n";
+        let idx = build(data, true);
+        assert_eq!(idx.total_lines, 2);
+        assert_eq!(
+            lines(&idx, data),
+            vec!["1,ok", "2,\"open\nstill open\n"]
+        );
+    }
+
+    #[test]
+    fn plain_mode_splits_every_newline() {
+        let data = b"1,\"hello\nworld\"\n2,plain\n";
+        let idx = build(data, false);
+        assert_eq!(idx.total_lines, 3);
+        assert_eq!(
+            lines(&idx, data),
+            vec!["1,\"hello", "world\"", "2,plain"]
+        );
+    }
+
+    #[test]
+    fn no_trailing_newline() {
+        let data = b"a,b\n1,\"x\ny\"";
+        let idx = build(data, true);
+        assert_eq!(idx.total_lines, 2);
+        assert_eq!(lines(&idx, data), vec!["a,b", "1,\"x\ny\""]);
+    }
+
+    #[test]
+    fn line_at_offset_maps_into_quoted_record() {
+        let data = b"a,b\n1,\"x\ny\"\n2,z\n";
+        let idx = build(data, true);
+        // Offset of the embedded newline inside the quoted cell (row 1).
+        let embedded_nl = data.iter().position(|&b| b == b'\n').unwrap();
+        let embedded_nl = embedded_nl
+            + 1
+            + data[embedded_nl + 1..].iter().position(|&b| b == b'\n').unwrap();
+        assert_eq!(idx.line_at_offset(data, embedded_nl), 1);
+        // Round-trip: start of each row maps back to that row.
+        for r in 0..idx.total_lines {
+            let s = idx.line_start(data, r);
+            assert_eq!(idx.line_at_offset(data, s), r);
+        }
     }
 }

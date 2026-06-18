@@ -415,8 +415,8 @@ fn load_file(path: PathBuf, progress: &AtomicU64) -> LoadMsg {
         Err(e) => return LoadMsg::Error(format!("Cannot memory-map file: {e}")),
     };
 
-    let index = LineIndex::build(&mmap, DEFAULT_SAMPLE, progress);
     let fmt = Format::from_path(&path);
+    let index = LineIndex::build(&mmap, DEFAULT_SAMPLE, fmt.quote_aware(), progress);
 
     let first_line = if index.total_lines > 0 {
         index.line_bytes(&mmap, 0).to_vec()
@@ -1162,7 +1162,10 @@ fn paint_cell(ui: &egui::Ui, fill: Option<egui::Color32>, left: bool, top: bool)
 /// Instead we scroll by *row index* (`u64`) and render only the visible window,
 /// driving it with a custom scrollbar that maps position with `f64`/integer
 /// math. egui_extras still lays out the visible window (columns, striping,
-/// resizing); its own vertical scroll is disabled.
+/// resizing). Its built-in vertical scroll *is* enabled, but only over the
+/// handful of buffered rows — never the whole file — so it stays well within
+/// `f32` precision. We feed it a sub-row pixel offset (`scroll_residual`) so the
+/// view glides smoothly between rows instead of snapping a full row at a time.
 fn show_table(
     ui: &mut egui::Ui,
     loaded: &mut Loaded,
@@ -1207,9 +1210,6 @@ fn show_table(
     let needs_hscroll = content_w > table_w_avail;
     let body_h = (body_h_full - if needs_hscroll { scrollbar_h } else { 0.0 }).max(0.0);
     let visible_full = (body_h / row_pitch).floor().max(1.0) as u64;
-    // Draw a couple of extra rows so the partially-visible bottom row is filled;
-    // anything past the body is clipped by the horizontal scroll area.
-    let visible_draw = (visible_full + 2).min(total_rows);
     let max_top = total_rows.saturating_sub(visible_full);
 
     let table_w = content_w.max(table_w_avail);
@@ -1221,7 +1221,12 @@ fn show_table(
         ),
     );
 
-    // --- Vertical navigation input (wheel, keys) ------------------------------
+    // --- Vertical navigation input (wheel + keys) -----------------------------
+    // We virtualize the view ourselves: the table's own scroll area is disabled
+    // (`.vscroll(false)` below), so nothing fights us for the wheel. We read the
+    // wheel delta, accumulate it in `scroll_residual`, and convert whole rows of
+    // it into `top_row`. The sub-row remainder is kept so slow scrolling still
+    // advances and fast flicks move several rows per frame.
     let pointer_over = ui
         .input(|i| i.pointer.hover_pos())
         .map_or(false, |p| outer.contains(p));
@@ -1239,45 +1244,106 @@ fn show_table(
     });
 
     let mut top = loaded.top_row as i64;
+    let mut residual = loaded.scroll_residual;
+
     if pointer_over && wheel_dy != 0.0 {
-        loaded.scroll_residual += wheel_dy;
-        let steps = (loaded.scroll_residual / row_pitch).trunc();
-        loaded.scroll_residual -= steps * row_pitch;
-        top -= steps as i64; // positive wheel delta scrolls the view up
+        // Wheel up gives a positive delta and should move toward earlier rows.
+        residual -= wheel_dy;
     }
+    // Turn accumulated pixels into whole-row steps, keeping the remainder.
+    let step = (residual / row_pitch).trunc();
+    residual -= step * row_pitch;
+    top += step as i64;
+
     if !typing {
         if pg_dn {
             top += visible_full as i64;
+            residual = 0.0;
         }
         if pg_up {
             top -= visible_full as i64;
+            residual = 0.0;
         }
         if arr_dn {
             top += 1;
+            residual = 0.0;
         }
         if arr_up {
             top -= 1;
+            residual = 0.0;
         }
         if key_home {
             top = 0;
+            residual = 0.0;
         }
         if key_end {
             top = max_top as i64;
+            residual = 0.0;
         }
     }
     // A "Go to row" / search jump always wins and is shown at the top.
     if let Some(r) = scroll_to {
         top = (r as i64).min(max_top as i64);
-        loaded.scroll_residual = 0.0;
+        residual = 0.0;
     }
-    loaded.top_row = top.clamp(0, max_top as i64) as u64;
+    if top <= 0 {
+        top = 0;
+        residual = 0.0;
+    } else if top >= max_top as i64 {
+        top = max_top as i64;
+        residual = 0.0;
+    }
+    loaded.top_row = top as u64;
+    loaded.scroll_residual = residual;
 
     // --- Custom vertical scrollbar -------------------------------------------
     if vneed && max_top > 0 {
-        let track_top = outer.top() + header_h + spacing_y;
+        let sb_left = outer.right() - SB_W;
+        let sb_top = outer.top() + header_h + spacing_y;
+        let sb_bottom = sb_top + body_h;
+
+        // Square arrow buttons at each end; the draggable track sits between.
+        let btn_h = (SB_W).min(body_h * 0.5);
+        let up_rect = egui::Rect::from_min_max(
+            egui::pos2(sb_left, sb_top),
+            egui::pos2(outer.right(), sb_top + btn_h),
+        );
+        let down_rect = egui::Rect::from_min_max(
+            egui::pos2(sb_left, sb_bottom - btn_h),
+            egui::pos2(outer.right(), sb_bottom),
+        );
+        let track_top = sb_top + btn_h;
+        let track_h = (body_h - 2.0 * btn_h).max(0.0);
+
+        // Step buttons. While held they auto-repeat (request a repaint each
+        // frame and keep stepping), so press-and-hold scrolls continuously.
+        let up_resp = ui.interact(up_rect, ui.id().with("sb_up"), egui::Sense::click_and_drag());
+        let down_resp =
+            ui.interact(down_rect, ui.id().with("sb_down"), egui::Sense::click_and_drag());
+
+        let mut new_top = loaded.top_row as i64;
+        if up_resp.is_pointer_button_down_on() {
+            new_top -= 1;
+            ui.ctx().request_repaint();
+        } else if up_resp.clicked() {
+            new_top -= 1;
+        }
+        if down_resp.is_pointer_button_down_on() {
+            new_top += 1;
+            ui.ctx().request_repaint();
+        } else if down_resp.clicked() {
+            new_top += 1;
+        }
+        new_top = new_top.clamp(0, max_top as i64);
+        if new_top != loaded.top_row as i64 {
+            loaded.top_row = new_top as u64;
+            loaded.scroll_residual = 0.0;
+        }
+
+        // Draggable thumb track.
         let track_rect = egui::Rect::from_min_max(
-            egui::pos2(outer.right() - SB_W, track_top),
-            egui::pos2(outer.right(), track_top + body_h),
+            egui::pos2(sb_left, track_top),
+            egui::pos2(outer.right(), track_top + track_h),
         );
         let resp = ui.interact(
             track_rect,
@@ -1286,13 +1352,14 @@ fn show_table(
         );
 
         let handle_frac = (visible_full as f32 / total_rows as f32).clamp(0.04, 1.0);
-        let handle_h = (body_h * handle_frac).clamp(28.0, body_h);
-        let travel = (body_h - handle_h).max(0.0);
+        let handle_h = (track_h * handle_frac).clamp(28.0_f32.min(track_h), track_h);
+        let travel = (track_h - handle_h).max(0.0);
 
         if (resp.dragged() || resp.clicked()) && travel > 0.0 {
             if let Some(p) = resp.interact_pointer_pos() {
                 let t = ((p.y - track_top - handle_h * 0.5) / travel).clamp(0.0, 1.0);
                 loaded.top_row = (t as f64 * max_top as f64).round() as u64;
+                loaded.scroll_residual = 0.0;
             }
         }
 
@@ -1303,7 +1370,7 @@ fn show_table(
         };
         let handle_top = track_top + travel * pos_frac;
         let handle_rect = egui::Rect::from_min_size(
-            egui::pos2(outer.right() - SB_W + 1.0, handle_top),
+            egui::pos2(sb_left + 1.0, handle_top),
             egui::vec2(SB_W - 2.0, handle_h),
         );
         let v = ui.visuals();
@@ -1319,11 +1386,42 @@ fn show_table(
             egui::Rounding::same((SB_W - 2.0) * 0.5),
             handle_color,
         );
+
+        // Paint the two arrow buttons (background + chevron).
+        let painter = ui.painter();
+        for (rect, resp, up) in [(up_rect, &up_resp, true), (down_rect, &down_resp, false)] {
+            let bg = if resp.is_pointer_button_down_on() {
+                v.widgets.active.bg_fill
+            } else if resp.hovered() {
+                v.widgets.hovered.bg_fill
+            } else {
+                v.widgets.inactive.bg_fill
+            };
+            painter.rect_filled(rect, egui::Rounding::same(2.0), bg);
+            let c = rect.center();
+            let a = (btn_h * 0.22).max(2.5);
+            let tip = if up { c.y - a } else { c.y + a };
+            let base = if up { c.y + a } else { c.y - a };
+            let arrow = [
+                egui::pos2(c.x, tip),
+                egui::pos2(c.x - a, base),
+                egui::pos2(c.x + a, base),
+            ];
+            painter.add(egui::Shape::convex_polygon(
+                arrow.to_vec(),
+                v.widgets.active.fg_stroke.color,
+                egui::Stroke::NONE,
+            ));
+        }
     }
 
     // --- Render the visible window -------------------------------------------
+    // Pure virtualization: render only the rows that fit (plus a one-row buffer
+    // so the bottom row can be partially visible). The table's own vertical
+    // scroll area is disabled below, so this window starts exactly at `top_row`
+    // and nothing fights the wheel handling above.
     let start = loaded.top_row;
-    let count = visible_draw.min(total_rows - start) as usize;
+    let count = ((visible_full + 2).min(total_rows - start)) as usize;
 
     // Snapshot the selection for read-only fills; live edits below take effect
     // on the next repaint (which we request while dragging).
