@@ -57,19 +57,32 @@ impl Format {
         false
     }
 
-    /// Whether record boundaries must honour double-quoted fields. CSV and TSV
-    /// allow a quoted cell to span multiple physical lines (RFC 4180), so a
-    /// bare `\n` does not always end a record. NDJSON and plain text always
-    /// break on every newline.
+    /// Whether record boundaries must honour double-quoted fields. Only CSV
+    /// does: an RFC 4180 quoted cell may span several physical lines, so a bare
+    /// `\n` does not always end a record. Tab-separated values follow the IANA
+    /// convention where fields never contain raw tabs or newlines (those are
+    /// backslash-escaped), so a `"` is ordinary data and every `\n` ends a row.
+    /// Treating TSV as quoted would let a single stray `"` (e.g. `2" pipe`)
+    /// swallow the following rows. NDJSON and plain text also break on every
+    /// newline.
     pub fn quote_aware(self) -> bool {
-        matches!(self, Format::Csv | Format::Tsv)
+        matches!(self, Format::Csv)
     }
 }
 
-/// Split a single delimited line into fields, honouring quoted values.
-fn parse_delimited(bytes: &[u8], delim: u8) -> Vec<String> {
+/// Strip a leading UTF-8 byte-order mark, if present. Excel and many Windows
+/// tools prefix exported files with `EF BB BF`; left in place it corrupts the
+/// first cell of the first row and breaks JSON parsing of the first line.
+fn strip_bom(bytes: &[u8]) -> &[u8] {
+    bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes)
+}
+
+/// Split a single delimited line into fields. `quoting` enables RFC 4180
+/// double-quote handling (CSV); when it is off (TSV) a `"` is literal data.
+fn parse_delimited(bytes: &[u8], delim: u8, quoting: bool) -> Vec<String> {
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(delim)
+        .quoting(quoting)
         .has_headers(false)
         .flexible(true)
         .from_reader(bytes);
@@ -82,11 +95,14 @@ fn parse_delimited(bytes: &[u8], delim: u8) -> Vec<String> {
 
 /// Compute the column headers for a file given its format and first line.
 pub fn headers(format: Format, first_line: &[u8]) -> Vec<String> {
+    let first_line = strip_bom(first_line);
     match format {
         Format::Csv | Format::Tsv => {
             // The first line is treated as data, so use generic column names
             // sized to the number of fields in that line.
-            let n = parse_delimited(first_line, format.delimiter()).len().max(1);
+            let n = parse_delimited(first_line, format.delimiter(), format.quote_aware())
+                .len()
+                .max(1);
             (1..=n).map(|i| format!("Column {i}")).collect()
         }
         Format::Ndjson => {
@@ -102,8 +118,11 @@ pub fn headers(format: Format, first_line: &[u8]) -> Vec<String> {
 
 /// Parse a single data line into cells aligned with `headers`.
 pub fn parse_row(format: Format, headers: &[String], bytes: &[u8]) -> Vec<String> {
+    let bytes = strip_bom(bytes);
     match format {
-        Format::Csv | Format::Tsv => parse_delimited(bytes, format.delimiter()),
+        Format::Csv | Format::Tsv => {
+            parse_delimited(bytes, format.delimiter(), format.quote_aware())
+        }
         Format::Ndjson => match serde_json::from_slice::<Value>(bytes) {
             Ok(Value::Object(map)) => headers
                 .iter()
@@ -119,3 +138,62 @@ pub fn parse_row(format: Format, headers: &[String], bytes: &[u8]) -> Vec<String
         Format::Txt => vec![String::from_utf8_lossy(bytes).into_owned()],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(fmt: Format, line: &str) -> Vec<String> {
+        let headers = headers(fmt, line.as_bytes());
+        parse_row(fmt, &headers, line.as_bytes())
+    }
+
+    #[test]
+    fn tsv_treats_quote_as_literal() {
+        // A stray double quote must not turn the rest of the cell into a quoted
+        // field (which previously also merged following rows in the index).
+        let cells = row(Format::Tsv, "2\" pipe\tin stock");
+        assert_eq!(cells, vec!["2\" pipe".to_string(), "in stock".to_string()]);
+    }
+
+    #[test]
+    fn tsv_keeps_balanced_quotes_verbatim() {
+        let cells = row(Format::Tsv, "she said \"hi\"\tok");
+        assert_eq!(
+            cells,
+            vec!["she said \"hi\"".to_string(), "ok".to_string()]
+        );
+    }
+
+    #[test]
+    fn csv_still_honours_quoting() {
+        // CSV keeps RFC 4180 behaviour: a quoted field may contain the delimiter.
+        let cells = row(Format::Csv, "\"a,b\",c");
+        assert_eq!(cells, vec!["a,b".to_string(), "c".to_string()]);
+    }
+
+    #[test]
+    fn bom_is_stripped_from_first_cell() {
+        let line = "\u{feff}id,name";
+        let cells = row(Format::Csv, line);
+        assert_eq!(cells, vec!["id".to_string(), "name".to_string()]);
+    }
+
+    #[test]
+    fn bom_does_not_break_ndjson() {
+        let line = "\u{feff}{\"a\":1}";
+        let headers = headers(Format::Ndjson, line.as_bytes());
+        assert_eq!(headers, vec!["a".to_string()]);
+        let cells = parse_row(Format::Ndjson, &headers, line.as_bytes());
+        assert_eq!(cells, vec!["1".to_string()]);
+    }
+
+    #[test]
+    fn tsv_is_not_quote_aware() {
+        assert!(!Format::Tsv.quote_aware());
+        assert!(Format::Csv.quote_aware());
+        assert!(!Format::Ndjson.quote_aware());
+        assert!(!Format::Txt.quote_aware());
+    }
+}
+
