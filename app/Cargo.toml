@@ -2,7 +2,7 @@
 name = "bigfile_viewer"
 version = "0.1.0"
 edition = "2021"
-description = "A viewer for very large CSV / JSON / TXT files (handles 50GB+ smoothly)"
+description = "A viewer for very large CSV / JSON / TXT files (tested up to 170GB, no known upper limit)"
 
 [[bin]]
 name = "Dinosaur"

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dinosaur — open giant data files instantly</title>
+  <meta name="description" content="Dinosaur is a native desktop viewer for very large CSV, TSV, JSON and TXT files. Open and scroll files of 170 GB and beyond instantly — it never loads the whole file into memory." />
+  <link rel="icon" type="image/svg+xml" href="logo.svg" />
+  <link rel="stylesheet" href="styles.css" />
+  <meta property="og:title" content="Dinosaur — open giant data files instantly" />
+  <meta property="og:description" content="A native viewer for very large CSV / TSV / JSON / TXT files. Opens 170 GB files and beyond instantly." />
+  <meta property="og:type" content="website" />
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="#top">
+      <img src="logo.svg" alt="Dinosaur logo" width="34" height="34" />
+      <span>Dinosaur</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#performance">Performance</a>
+      <a href="#formats">Formats</a>
+      <a class="ghost" href="https://github.com/BipulRaman/Dinosaur" target="_blank" rel="noopener">GitHub</a>
+      <a class="cta" href="https://github.com/BipulRaman/Dinosaur/releases/latest" target="_blank" rel="noopener">Download</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="hero-content">
+        <img class="hero-logo" src="logo.svg" alt="Dinosaur logo" width="112" height="112" />
+        <h1>Open <span class="grad">giant</span> data files<br />instantly.</h1>
+        <p class="lead">
+          Dinosaur is a native desktop viewer for <strong>very large</strong>
+          CSV, TSV, JSON and TXT files. Scroll through files of <strong>170&nbsp;GB and beyond</strong>
+          without waiting — because it never loads the whole file into memory.
+        </p>
+        <div class="hero-actions">
+          <a class="btn primary" href="https://github.com/BipulRaman/Dinosaur/releases/latest" target="_blank" rel="noopener">
+            Download for Windows
+          </a>
+          <a class="btn ghost" href="https://github.com/BipulRaman/Dinosaur" target="_blank" rel="noopener">
+            View source
+          </a>
+        </div>
+        <p class="hero-note">Portable ZIP · No installation · Runs even without a GPU</p>
+      </div>
+
+      <!-- App window mockup -->
+      <div class="window" aria-hidden="true">
+        <div class="window-bar">
+          <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+          <span class="window-title">Dinosaur — sample_170gb.csv</span>
+        </div>
+        <div class="toolbar">
+          <span class="tb-btn">Open</span>
+          <span class="tb-sep"></span>
+          <span class="tb-muted">Go to</span><span class="tb-field">row #</span><span class="tb-btn">Go</span>
+          <span class="tb-sep"></span>
+          <span class="tb-muted">Find</span><span class="tb-field wide">Find text…</span>
+          <span class="tb-spacer"></span>
+          <span class="tb-btn">Info</span>
+        </div>
+        <div class="sheet">
+          <div class="sheet-row head">
+            <div class="cell idx">#</div>
+            <div class="cell">Column 1</div>
+            <div class="cell">Column 2</div>
+            <div class="cell">Column 3</div>
+            <div class="cell">Column 4</div>
+          </div>
+          <div class="sheet-row"><div class="cell idx">1</div><div class="cell">a1f9</div><div class="cell">Aarav</div><div class="cell">Mumbai</div><div class="cell num">₹ 14,902</div></div>
+          <div class="sheet-row sel"><div class="cell idx">2</div><div class="cell">b2c0</div><div class="cell">Diya</div><div class="cell">Delhi</div><div class="cell num">₹ 8,310</div></div>
+          <div class="sheet-row sel"><div class="cell idx">3</div><div class="cell">c3d1</div><div class="cell">Vihaan</div><div class="cell">Bengaluru</div><div class="cell num">₹ 21,477</div></div>
+          <div class="sheet-row"><div class="cell idx">4</div><div class="cell">d4e2</div><div class="cell">Ananya</div><div class="cell">Pune</div><div class="cell num">₹ 5,090</div></div>
+          <div class="sheet-row"><div class="cell idx">5</div><div class="cell">e5f3</div><div class="cell">Kabir</div><div class="cell">Chennai</div><div class="cell num">₹ 33,640</div></div>
+          <div class="sheet-row"><div class="cell idx">6</div><div class="cell">f6a4</div><div class="cell">Saanvi</div><div class="cell">Kolkata</div><div class="cell num">₹ 12,205</div></div>
+        </div>
+        <div class="statusbar">
+          <span>sample_170gb.csv</span>
+          <span class="status-right">523,118,904 rows&nbsp;·&nbsp;5 cols&nbsp;·&nbsp;170.0 GB</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="section">
+      <h2>Built for files that break other apps</h2>
+      <p class="section-sub">Everything is bounded by what's on screen — not by how big the file is.</p>
+      <div class="grid">
+        <article class="card">
+          <div class="ic">📂</div>
+          <h3>Instant open</h3>
+          <p>Memory-mapped I/O means a 170&nbsp;GB file opens as fast as a 50&nbsp;KB one. Nothing is read into RAM until you scroll to it.</p>
+        </article>
+        <article class="card">
+          <div class="ic">📊</div>
+          <h3>Spreadsheet grid</h3>
+          <p>Clean, Google-Sheets-like typography with crisp gridlines, row numbers and sticky headers.</p>
+        </article>
+        <article class="card">
+          <div class="ic">🖱️</div>
+          <h3>Select &amp; copy</h3>
+          <p>Click or drag to select a range of cells, then right-click or press <kbd>Ctrl</kbd>+<kbd>C</kbd> to copy as TSV.</p>
+        </article>
+        <article class="card">
+          <div class="ic">🔎</div>
+          <h3>Fast search</h3>
+          <p>Find text forwards or backwards across the entire file, with optional case sensitivity.</p>
+        </article>
+        <article class="card">
+          <div class="ic">🔢</div>
+          <h3>Go to any row</h3>
+          <p>Jump to row 400-million in a billion-row file in O(1) — no scrolling, no waiting.</p>
+        </article>
+        <article class="card">
+          <div class="ic">🖥️</div>
+          <h3>Runs anywhere</h3>
+          <p>Ships a CPU software renderer, so it works on cloud VMs and machines without a dedicated GPU.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Performance -->
+    <section id="performance" class="section alt">
+      <h2>Why it stays fast</h2>
+      <p class="section-sub">A few deliberate techniques keep memory and CPU bounded by the viewport.</p>
+      <div class="perf">
+        <div class="perf-row">
+          <div class="perf-key">Memory-mapped I/O</div>
+          <div class="perf-val">The OS pages in only the bytes you touch. The whole file is never in RAM.</div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-key">Sparse parallel index</div>
+          <div class="perf-val">Newlines are scanned across all cores; one offset is stored every 4096 lines, so 500M lines cost a few MB — and any line is found in O(1).</div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-key">Virtualized table</div>
+          <div class="perf-val">Only the ~50 rows on screen are ever drawn.</div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-key">Integer virtual scroll</div>
+          <div class="perf-val">Scrolling tracks the row index, not pixels, so it stays precise across billions of rows.</div>
+        </div>
+        <div class="perf-row">
+          <div class="perf-key">Background indexing</div>
+          <div class="perf-val">Indexing runs on a worker thread with a live progress bar — the UI never freezes.</div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="stat-num">170&nbsp;GB+</span><span class="stat-label">tested, no known limit</span></div>
+        <div class="stat"><span class="stat-num">O(1)</span><span class="stat-label">jump to any row</span></div>
+        <div class="stat"><span class="stat-num">~50</span><span class="stat-label">rows drawn at a time</span></div>
+      </div>
+    </section>
+
+    <!-- Formats -->
+    <section id="formats" class="section">
+      <h2>Formats it speaks</h2>
+      <div class="formats">
+        <div class="fmt"><span class="fmt-ext">.csv</span><span>Comma-separated values</span></div>
+        <div class="fmt"><span class="fmt-ext">.tsv</span><span>Tab-separated values</span></div>
+        <div class="fmt"><span class="fmt-ext">.ndjson</span><span>JSON lines — keys become columns</span></div>
+        <div class="fmt"><span class="fmt-ext">.txt / .log</span><span>One line per row</span></div>
+      </div>
+      <p class="fine">Use newline-delimited JSON (NDJSON) for large JSON data — a single giant JSON array isn't streamed.</p>
+    </section>
+
+    <!-- Download CTA -->
+    <section class="cta-band">
+      <h2>Ready to tame your data?</h2>
+      <p>Download the portable build, unzip, and run. That's it.</p>
+      <a class="btn primary big" href="https://github.com/BipulRaman/Dinosaur/releases/latest" target="_blank" rel="noopener">
+        Download Dinosaur
+      </a>
+      <p class="cta-fine">Windows · portable ZIP · open-source (MIT)</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <a class="brand" href="#top">
+      <img src="logo.svg" alt="Dinosaur logo" width="28" height="28" />
+      <span>Dinosaur</span>
+    </a>
+    <p class="made">
+      Made with
+      <svg class="i-heart" viewBox="0 0 24 24" width="16" height="16" aria-label="love" role="img"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#e12d39"/></svg>
+      in
+      <svg class="i-flag" viewBox="0 0 36 24" width="24" height="16" aria-label="India" role="img">
+        <rect width="36" height="8" fill="#FF9933"/>
+        <rect y="8" width="36" height="8" fill="#FFFFFF"/>
+        <rect y="16" width="36" height="8" fill="#138808"/>
+        <g stroke="#000080" stroke-width="0.5" fill="none">
+          <circle cx="18" cy="12" r="3.1"/>
+        </g>
+        <g stroke="#000080" stroke-width="0.35">
+          <line x1="18" y1="8.9" x2="18" y2="15.1"/>
+          <line x1="14.9" y1="12" x2="21.1" y2="12"/>
+          <line x1="15.8" y1="9.8" x2="20.2" y2="14.2"/>
+          <line x1="20.2" y1="9.8" x2="15.8" y2="14.2"/>
+          <line x1="16.7" y1="9.2" x2="19.3" y2="14.8"/>
+          <line x1="19.3" y1="9.2" x2="16.7" y2="14.8"/>
+          <line x1="15.2" y1="10.7" x2="20.8" y2="13.3"/>
+          <line x1="20.8" y1="10.7" x2="15.2" y2="13.3"/>
+        </g>
+        <circle cx="18" cy="12" r="0.7" fill="#000080"/>
+      </svg>
+      by <a href="https://bipul.in" target="_blank" rel="noopener">Bipul Raman</a>
+    </p>
+    <div class="footer-links">
+      <a href="https://github.com/BipulRaman/Dinosaur" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/BipulRaman/Dinosaur/releases/latest" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/BipulRaman/Dinosaur/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+  </footer>
+</body>
+</html>

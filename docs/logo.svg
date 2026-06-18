@@ -1,0 +1,36 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" x1="40" y1="24" x2="216" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A78BFA"/>
+      <stop offset="0.55" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#6D28D9"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="128" y1="24" x2="128" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(128 128) scale(1.18) translate(-128 -128)">
+    <g>
+      <rect x="24" y="24" width="208" height="208" rx="58" fill="url(#tile)"/>
+    </g>
+    <rect x="24" y="24" width="208" height="120" rx="58" fill="url(#gloss)"/>
+    <rect x="25.5" y="25.5" width="205" height="205" rx="56.5" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="3"/>
+
+    <g transform="translate(-11 2)">
+      <g fill="#FFFFFF">
+        <rect x="96"  y="150" width="17" height="38" rx="8.5"/>
+        <rect x="120" y="154" width="17" height="34" rx="8.5"/>
+        <rect x="150" y="154" width="17" height="34" rx="8.5"/>
+        <rect x="173" y="150" width="17" height="38" rx="8.5"/>
+        <path d="M176 132 C206 120 219 98 226 80 C220 110 208 142 188 166 C182 156 178 144 176 132 Z"/>
+        <ellipse cx="140" cy="150" rx="52" ry="31"/>
+        <path d="M92 86 C84 110 96 132 116 142 C126 136 128 124 122 114 C114 100 106 92 100 86 Z"/>
+        <ellipse cx="86" cy="80" rx="23" ry="17"/>
+        <ellipse cx="66" cy="86" rx="14" ry="11"/>
+      </g>
+      <circle cx="80" cy="75" r="4.5" fill="#6D28D9"/>
+    </g>
+  </g>
+</svg>
