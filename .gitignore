@@ -1,0 +1,22 @@
+# Distributable output (portable ZIPs + installer produced by scripts/package.ps1)
+/dist/
+
+# Rust build output (app crate also has its own .gitignore)
+/app/target/
+**/target/
+
+# Generated test data
+/samples/
+**/samples/
+
+# Backtrace / debug artifacts
+*.pdb
+
+# Editor / OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini

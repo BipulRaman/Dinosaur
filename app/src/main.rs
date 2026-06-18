@@ -305,6 +305,11 @@ struct App {
     last_match: Option<u64>,
     /// Short status message shown next to the search box.
     search_status: String,
+    /// Whether the “Info / About” modal is open.
+    show_info: bool,
+    /// True only on the frame the About modal is opened, so the opening click
+    /// isn't immediately treated as a “click outside” dismissal.
+    info_just_opened: bool,
 }
 
 impl Default for App {
@@ -317,6 +322,8 @@ impl Default for App {
             search_case_sensitive: false,
             last_match: None,
             search_status: String::new(),
+            show_info: false,
+            info_just_opened: false,
         }
     }
 }
@@ -614,6 +621,7 @@ impl eframe::App for App {
 
         self.top_bar(ctx);
         self.status_bar(ctx);
+        self.info_dialog(ctx);
 
         let mut open_clicked = false;
         egui::CentralPanel::default().show(ctx, |ui| match &mut self.state {
@@ -848,6 +856,18 @@ impl App {
                             ui.label(egui::RichText::new(&self.search_status).color(color).small());
                         }
                     }
+
+                    // Info / About button, pinned to the right edge.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add_sized([58.0, 32.0], egui::Button::new("Info"))
+                            .on_hover_text("About Dinosaur")
+                            .clicked()
+                        {
+                            self.show_info = true;
+                            self.info_just_opened = true;
+                        }
+                    });
                 });
             });
     }
@@ -914,6 +934,182 @@ impl App {
                     }
                 });
             });
+    }
+
+    /// Modal "About" dialog: credits, author link and the project repository.
+    fn info_dialog(&mut self, ctx: &egui::Context) {
+        if !self.show_info {
+            return;
+        }
+        let just_opened = self.info_just_opened;
+        self.info_just_opened = false;
+
+        // Dim the rest of the UI to make the dialog feel modal.
+        let screen = ctx.screen_rect();
+        let dim = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("info_dim"),
+        ));
+        dim.rect_filled(screen, 0.0, egui::Color32::from_black_alpha(120));
+
+        let mut open = true;
+        egui::Window::new("About")
+            .order(egui::Order::Tooltip)
+            .collapsible(false)
+            .resizable(false)
+            .title_bar(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .frame(
+                egui::Frame::none()
+                    .fill(egui::Color32::WHITE)
+                    .rounding(egui::Rounding::same(16.0))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(230, 230, 234)))
+                    .inner_margin(egui::Margin::symmetric(30.0, 28.0))
+                    .shadow(egui::epaint::Shadow {
+                        offset: egui::vec2(0.0, 10.0),
+                        blur: 36.0,
+                        spread: 0.0,
+                        color: egui::Color32::from_black_alpha(55),
+                    }),
+            )
+            .show(ctx, |ui| {
+                let accent = egui::Color32::from_rgb(124, 58, 237); // brand purple
+                let ink = egui::Color32::from_rgb(40, 41, 48);
+                let muted = egui::Color32::from_rgb(140, 142, 150);
+                ui.set_width(300.0);
+
+                ui.vertical_centered(|ui| {
+                    ui.add(
+                        egui::Image::new(egui::ImageSource::Bytes {
+                            uri: "bytes://logo.svg".into(),
+                            bytes: LOGO_SVG.into(),
+                        })
+                        .fit_to_exact_size(egui::vec2(88.0, 88.0)),
+                    );
+                    ui.add_space(12.0);
+                    ui.label(egui::RichText::new("Dinosaur").size(26.0).strong().color(ink));
+                    ui.add_space(3.0);
+                    ui.label(
+                        egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                            .size(12.0)
+                            .color(muted),
+                    );
+
+                    ui.add_space(18.0);
+                    // Hairline divider.
+                    let w = ui.available_width();
+                    let (line, _) =
+                        ui.allocate_exact_size(egui::vec2(w, 1.0), egui::Sense::hover());
+                    ui.painter().hline(
+                        line.x_range(),
+                        line.center().y,
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(236, 236, 240)),
+                    );
+                    ui.add_space(18.0);
+
+                    // "Made with ❤ in 🇮🇳 By Bipul Raman" — a horizontally
+                    // centered row. egui won't auto-centre a left-to-right row,
+                    // so measure the content width and let `vertical_centered`
+                    // centre the fixed-size block.
+                    let font14 = egui::FontId::proportional(14.0);
+                    let tw = |ui: &egui::Ui, s: &str| {
+                        ui.fonts(|f| {
+                            f.layout_no_wrap(s.to_owned(), font14.clone(), ink).size().x
+                        })
+                    };
+                    let gap = 6.0;
+                    let content_w = tw(ui, "Made with")
+                        + tw(ui, "in")
+                        + tw(ui, "By")
+                        + tw(ui, "Bipul Raman")
+                        + 16.0 * 1.05   // heart width
+                        + 24.0 * 1.5    // flag width
+                        + gap * 5.0
+                        + 6.0;          // bold + slack
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(content_w, 26.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = gap;
+                            ui.visuals_mut().hyperlink_color = accent;
+                            let txt = |s: &str| egui::RichText::new(s).size(14.0).color(ink);
+                            ui.label(txt("Made with"));
+                            paint_heart(ui, 16.0);
+                            ui.label(txt("in"));
+                            paint_india_flag(ui, 24.0);
+                            ui.label(txt("By"));
+                            ui.hyperlink_to(
+                                egui::RichText::new("Bipul Raman").size(14.0).strong(),
+                                "https://bipul.in",
+                            );
+                        },
+                    );
+
+                    ui.add_space(14.0);
+                    ui.scope(|ui| {
+                        ui.visuals_mut().hyperlink_color = accent;
+                        ui.hyperlink_to(
+                            egui::RichText::new("github.com/BipulRaman/Dinosaur").size(13.0),
+                            "https://github.com/BipulRaman/Dinosaur",
+                        );
+                    });
+                });
+
+                // Close "✕" at the top-right corner.
+                let area = ui.min_rect();
+                let sz = 24.0;
+                let x_rect = egui::Rect::from_min_size(
+                    egui::pos2(area.right() - sz + 6.0, area.top() - 6.0),
+                    egui::vec2(sz, sz),
+                );
+                let resp = ui.interact(
+                    x_rect,
+                    ui.make_persistent_id("about_close_x"),
+                    egui::Sense::click(),
+                );
+                if resp.hovered() {
+                    ui.painter()
+                        .rect_filled(x_rect, 6.0, egui::Color32::from_rgb(238, 238, 242));
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                let col = if resp.hovered() {
+                    egui::Color32::from_rgb(70, 70, 78)
+                } else {
+                    egui::Color32::from_rgb(158, 160, 168)
+                };
+                let c = x_rect.center();
+                let r = 4.5;
+                let st = egui::Stroke::new(1.6, col);
+                ui.painter()
+                    .line_segment([c + egui::vec2(-r, -r), c + egui::vec2(r, r)], st);
+                ui.painter()
+                    .line_segment([c + egui::vec2(-r, r), c + egui::vec2(r, -r)], st);
+                if resp.clicked() {
+                    open = false;
+                }
+            });
+
+        // Close on Escape, on the Close button, or by clicking the dim backdrop.
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            open = false;
+        }
+        if !just_opened && ctx.input(|i| i.pointer.any_click()) {
+            // A click that did not land on the dialog window dismisses it.
+            let on_window = ctx
+                .input(|i| i.pointer.interact_pos())
+                .map(|p| {
+                    ctx.memory(|m| m.area_rect(egui::Id::new("About")))
+                        .map(|r| r.contains(p))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if !on_window {
+                open = false;
+            }
+        }
+        if !open {
+            self.show_info = false;
+        }
     }
 }
 
@@ -1379,6 +1575,84 @@ fn toolbar_divider(ui: &mut egui::Ui) {
         egui::Stroke::new(1.0, color),
     );
     ui.add_space(4.0);
+}
+
+/// Draw a small filled heart (the "love" glyph in the About dialog).
+fn paint_heart(ui: &mut egui::Ui, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size * 1.05, size), egui::Sense::hover());
+    let p = ui.painter();
+    let red = egui::Color32::from_rgb(0xE1, 0x2D, 0x39);
+    let cx = rect.center().x;
+    let top = rect.top();
+    let lobe = size * 0.27;
+    let lobe_y = top + lobe * 1.15;
+    // Two top lobes.
+    p.circle_filled(egui::pos2(cx - lobe, lobe_y), lobe, red);
+    p.circle_filled(egui::pos2(cx + lobe, lobe_y), lobe, red);
+    // Lower V.
+    p.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(cx - 2.0 * lobe, lobe_y + lobe * 0.15),
+            egui::pos2(cx + 2.0 * lobe, lobe_y + lobe * 0.15),
+            egui::pos2(cx, rect.bottom()),
+        ],
+        red,
+        egui::Stroke::NONE,
+    ));
+}
+
+/// Draw a proper flag of India: saffron / white / green bands with the
+/// navy-blue Ashoka Chakra (24 spokes) centred on the white band.
+fn paint_india_flag(ui: &mut egui::Ui, height: f32) {
+    let width = height * 1.5; // Official 3:2 ratio.
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let p = ui.painter();
+    let band = height / 3.0;
+
+    let saffron = egui::Color32::from_rgb(0xFF, 0x99, 0x33);
+    let white = egui::Color32::from_rgb(0xFF, 0xFF, 0xFF);
+    let green = egui::Color32::from_rgb(0x13, 0x88, 0x08);
+    let navy = egui::Color32::from_rgb(0x00, 0x00, 0x80);
+
+    let top = rect.top();
+    p.rect_filled(
+        egui::Rect::from_min_size(rect.left_top(), egui::vec2(width, band)),
+        0.0,
+        saffron,
+    );
+    p.rect_filled(
+        egui::Rect::from_min_size(egui::pos2(rect.left(), top + band), egui::vec2(width, band)),
+        0.0,
+        white,
+    );
+    p.rect_filled(
+        egui::Rect::from_min_size(egui::pos2(rect.left(), top + 2.0 * band), egui::vec2(width, band)),
+        0.0,
+        green,
+    );
+
+    // Ashoka Chakra — draw spokes first, then the rim and hub on top so the
+    // centre stays crisp instead of turning into a muddy blob.
+    let center = egui::pos2(rect.center().x.round() + 0.5, (top + band * 1.5).round());
+    let radius = band * 0.5;
+    let line = (height * 0.035).max(0.8);
+    for i in 0..24 {
+        let a = std::f32::consts::TAU * (i as f32) / 24.0;
+        let dir = egui::vec2(a.cos(), a.sin());
+        p.line_segment(
+            [center, center + dir * radius],
+            egui::Stroke::new(line * 0.6, navy),
+        );
+    }
+    p.circle_stroke(center, radius, egui::Stroke::new(line, navy));
+    p.circle_filled(center, radius * 0.2, navy);
+
+    // Thin neutral border so the white band is visible on light backgrounds.
+    p.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(0.8, egui::Color32::from_rgb(0xCC, 0xCC, 0xD0)),
+    );
 }
 
 /// Format a row count with thousands separators (e.g. `1,234,567`).

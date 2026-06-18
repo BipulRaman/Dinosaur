@@ -1,0 +1,64 @@
+name: Release
+
+# Build the portable Windows ZIP only when a GitHub Release is created,
+# then attach it to that release.
+on:
+  release:
+    types: [created]
+  # Allow manual runs for testing (won't upload unless a matching tag/release exists).
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  portable-zip:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins stable-x86_64-pc-windows-gnu; rustup installs it
+      # automatically on first cargo invocation inside app/.
+      - name: Show Rust toolchain
+        working-directory: app
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+
+      - name: Determine version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          if (-not $tag) {
+            # Manual dispatch: fall back to the Cargo.toml version.
+            $cargo = Get-Content app/Cargo.toml -Raw
+            if ($cargo -match '(?m)^\s*version\s*=\s*"([^"]+)"') { $tag = $Matches[1] }
+          }
+          $version = $tag -replace '^v', ''
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Packaging version $version"
+
+      - name: Build portable ZIP
+        shell: pwsh
+        run: pwsh scripts/package.ps1 -Version "${{ steps.ver.outputs.version }}"
+
+      - name: Upload ZIP as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dinosaur-${{ steps.ver.outputs.version }}-win64
+          path: dist/*.zip
+
+      - name: Attach ZIP to the release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $zip = Get-ChildItem dist/*.zip | Select-Object -First 1
+          gh release upload "${{ github.event.release.tag_name }}" $zip.FullName --clobber
