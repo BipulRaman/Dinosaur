@@ -143,7 +143,7 @@ fn setup_style(ctx: &egui::Context) {
     style.spacing.button_padding = Vec2::new(12.0, 6.0);
     style.spacing.interact_size.y = 28.0;
     style.spacing.window_margin = Margin::same(10.0);
-    style.spacing.menu_margin = Margin::same(8.0);
+    style.spacing.menu_margin = Margin::same(0.0);
 
     // Always show solid (non-floating) scrollbars so they never disappear or
     // overlap content. `solid()` also sets `foreground_color = false`, so the
@@ -152,16 +152,16 @@ fn setup_style(ctx: &egui::Context) {
     style.spacing.scroll = egui::style::ScrollStyle::solid();
     style.spacing.scroll.bar_width = 12.0;
 
-    // Visuals — refined light theme with neutral Apple-style grey controls.
+    // Visuals — refined light theme matched to the landing-page mockup.
     let mut v = egui::Visuals::light();
-    let rounding = Rounding::same(3.0);
+    let rounding = Rounding::same(7.0);
 
-    v.panel_fill = Color32::from_rgb(245, 245, 247);
+    v.panel_fill = Color32::from_rgb(250, 250, 252); // toolbar #fafafc
     v.window_fill = Color32::from_rgb(255, 255, 255);
     v.extreme_bg_color = Color32::from_rgb(255, 255, 255);
-    v.faint_bg_color = Color32::from_rgb(244, 244, 246);
+    v.faint_bg_color = Color32::from_rgb(245, 245, 248);
     v.window_rounding = Rounding::same(4.0);
-    v.window_stroke = Stroke::new(1.0, Color32::from_rgb(214, 214, 218));
+    v.window_stroke = Stroke::new(1.0, Color32::from_rgb(231, 231, 238)); // #e7e7ee
 
     // Base text colour for plain (noninteractive) labels. `weak_text_color()`
     // — used by `.weak()` labels, the status bar and TextEdit hint text — is a
@@ -183,22 +183,22 @@ fn setup_style(ctx: &egui::Context) {
         w.rounding = rounding;
     }
 
-    // Neutral, Apple-style grey controls. `weak_bg_fill` paints button
-    // backgrounds; `bg_fill` paints the scrollbar handle — keep the latter a
-    // clearly visible medium grey (never black).
+    // Buttons styled like the mockup toolbar: white pills with a soft 1px
+    // border and rounded corners. `weak_bg_fill` paints the button face;
+    // `bg_fill` paints the scrollbar handle — keep that a visible medium grey.
     v.widgets.inactive.bg_fill = Color32::from_rgb(193, 193, 198);
-    v.widgets.inactive.weak_bg_fill = Color32::from_rgb(236, 236, 238);
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(208, 208, 212));
-    v.widgets.inactive.fg_stroke = Stroke::new(1.0, Color32::from_rgb(40, 40, 44));
+    v.widgets.inactive.weak_bg_fill = Color32::from_rgb(255, 255, 255);
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(231, 231, 238));
+    v.widgets.inactive.fg_stroke = Stroke::new(1.0, Color32::from_rgb(29, 29, 39));
 
     v.widgets.hovered.bg_fill = Color32::from_rgb(168, 168, 174);
-    v.widgets.hovered.weak_bg_fill = Color32::from_rgb(224, 224, 228);
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(188, 188, 194));
-    v.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::BLACK);
+    v.widgets.hovered.weak_bg_fill = Color32::from_rgb(243, 243, 247);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(213, 213, 222));
+    v.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::from_rgb(20, 20, 28));
 
     v.widgets.active.bg_fill = Color32::from_rgb(148, 148, 154);
-    v.widgets.active.weak_bg_fill = Color32::from_rgb(208, 208, 214);
-    v.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(168, 168, 174));
+    v.widgets.active.weak_bg_fill = Color32::from_rgb(237, 231, 254); // purple press
+    v.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(124, 58, 237));
 
     style.visuals = v;
     ctx.set_style(style);
@@ -1151,16 +1151,18 @@ impl App {
     }
 }
 
-/// Spreadsheet palette (Google Sheets-like).
-const GRID_LINE: egui::Color32 = egui::Color32::from_rgb(218, 220, 224); // #dadce0
-const HEADER_BG: egui::Color32 = egui::Color32::from_rgb(248, 249, 250); // #f8f9fa
-const HEADER_TEXT: egui::Color32 = egui::Color32::from_rgb(95, 99, 104); // #5f6368
+/// Palette matched to the landing-page mockup (purple accent, soft greys).
+const GRID_LINE: egui::Color32 = egui::Color32::from_rgb(231, 231, 238); // #e7e7ee
+const HEADER_BG: egui::Color32 = egui::Color32::from_rgb(245, 245, 248); // #f5f5f8
+const HEADER_TEXT: egui::Color32 = egui::Color32::from_rgb(107, 108, 121); // #6b6c79
 const CELL_BG: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
-const CELL_TEXT: egui::Color32 = egui::Color32::from_rgb(32, 33, 36); // #202124
-const NUM_TEXT: egui::Color32 = egui::Color32::from_rgb(128, 132, 138);
-const SEL_BG: egui::Color32 = egui::Color32::from_rgb(232, 240, 254); // #e8f0fe
-const SEL_HEADER: egui::Color32 = egui::Color32::from_rgb(174, 203, 250); // #aecbfa
-const SEL_BORDER: egui::Color32 = egui::Color32::from_rgb(26, 115, 232); // #1a73e8
+const CELL_TEXT: egui::Color32 = egui::Color32::from_rgb(29, 29, 39); // #1d1d27
+const NUM_BG: egui::Color32 = egui::Color32::from_rgb(250, 250, 252); // #fafafc
+const NUM_TEXT: egui::Color32 = egui::Color32::from_rgb(154, 154, 166); // #9a9aa6
+const SEL_BG: egui::Color32 = egui::Color32::from_rgb(237, 231, 254); // #ede7fe
+const SEL_HEADER: egui::Color32 = egui::Color32::from_rgb(205, 188, 247); // #cdbcf7
+const SEL_BORDER: egui::Color32 = egui::Color32::from_rgb(124, 58, 237); // #7c3aed
+const SEL_NUM_TEXT: egui::Color32 = egui::Color32::from_rgb(67, 48, 138); // #43308a
 const FIND_BG: egui::Color32 = egui::Color32::from_rgb(255, 241, 194); // soft yellow
 
 /// Fill a table cell and draw its gridlines, returning the cell rectangle.
@@ -1546,7 +1548,7 @@ fn show_table(
                             // Row-number cell. Clicking it selects the whole
                             // row; dragging or Shift+click extends the range.
                             row.col(|ui| {
-                                let fill = if row_in_sel { SEL_HEADER } else { HEADER_BG };
+                                let fill = if row_in_sel { SEL_HEADER } else { NUM_BG };
                                 let rect = paint_cell(ui, Some(fill), true, false);
 
                                 let last_col = ncols.saturating_sub(1);
@@ -1590,7 +1592,7 @@ fn show_table(
 
                                 ui.centered_and_justified(|ui| {
                                     let mut t = egui::RichText::new((abs + 1).to_string())
-                                        .color(if row_in_sel { SEL_BORDER } else { NUM_TEXT });
+                                        .color(if row_in_sel { SEL_NUM_TEXT } else { NUM_TEXT });
                                     if row_in_sel {
                                         t = t.strong();
                                     }
@@ -1673,10 +1675,9 @@ fn show_table(
                                     }
 
                                     resp.context_menu(|ui| {
-                                        ui.set_min_width(112.0);
                                         if ui
                                             .add_sized(
-                                                [ui.available_width(), 28.0],
+                                                [56.0, 30.0],
                                                 egui::Button::new("Copy"),
                                             )
                                             .clicked()
