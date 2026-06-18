@@ -58,8 +58,17 @@ fn main() -> eframe::Result<()> {
                 o.fallback_theme = egui::Theme::Light;
             });
             egui_extras::install_image_loaders(&cc.egui_ctx);
+            install_fonts(&cc.egui_ctx);
             setup_style(&cc.egui_ctx);
-            Ok(Box::<App>::default())
+            let mut app = App::default();
+            // Optionally open a file passed on the command line:
+            //   Dinosaur.exe path\to\file.csv
+            if let Some(path) = std::env::args_os().nth(1).map(PathBuf::from) {
+                if path.is_file() {
+                    app.start_loading(path);
+                }
+            }
+            Ok(Box::new(app))
         }),
     )
 }
@@ -83,6 +92,31 @@ fn load_icon() -> Option<egui::IconData> {
     })
 }
 
+/// Load a crisp native sans-serif (Segoe UI on Windows) as the proportional
+/// font so the data grid reads like a modern spreadsheet. Falls back silently
+/// to egui's bundled font if the system font isn't available.
+fn install_fonts(ctx: &egui::Context) {
+    const CANDIDATES: [&str; 2] = [
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+    ];
+    for path in CANDIDATES {
+        if let Ok(bytes) = std::fs::read(path) {
+            let mut fonts = egui::FontDefinitions::default();
+            fonts
+                .font_data
+                .insert("system-sans".to_owned(), egui::FontData::from_owned(bytes));
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .insert(0, "system-sans".to_owned());
+            ctx.set_fonts(fonts);
+            break;
+        }
+    }
+}
+
 /// Apply a refined dark theme: tuned typography, spacing, rounded widgets and
 /// neutral Apple-style grey controls, so the app feels like a finished product.
 fn setup_style(ctx: &egui::Context) {
@@ -92,10 +126,10 @@ fn setup_style(ctx: &egui::Context) {
 
     // Typography.
     style.text_styles = [
-        (TextStyle::Heading, FontId::new(22.0, FontFamily::Proportional)),
-        (TextStyle::Body, FontId::new(14.0, FontFamily::Proportional)),
-        (TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace)),
-        (TextStyle::Button, FontId::new(14.0, FontFamily::Proportional)),
+        (TextStyle::Heading, FontId::new(20.0, FontFamily::Proportional)),
+        (TextStyle::Body, FontId::new(13.0, FontFamily::Proportional)),
+        (TextStyle::Monospace, FontId::new(12.0, FontFamily::Monospace)),
+        (TextStyle::Button, FontId::new(13.0, FontFamily::Proportional)),
         (TextStyle::Small, FontId::new(11.0, FontFamily::Proportional)),
     ]
     .into();
@@ -116,14 +150,20 @@ fn setup_style(ctx: &egui::Context) {
 
     // Visuals — refined light theme with neutral Apple-style grey controls.
     let mut v = egui::Visuals::light();
-    let rounding = Rounding::same(7.0);
+    let rounding = Rounding::same(3.0);
 
     v.panel_fill = Color32::from_rgb(245, 245, 247);
     v.window_fill = Color32::from_rgb(255, 255, 255);
     v.extreme_bg_color = Color32::from_rgb(255, 255, 255);
     v.faint_bg_color = Color32::from_rgb(244, 244, 246);
-    v.window_rounding = Rounding::same(9.0);
+    v.window_rounding = Rounding::same(4.0);
     v.window_stroke = Stroke::new(1.0, Color32::from_rgb(214, 214, 218));
+
+    // Base text colour for plain (noninteractive) labels. `weak_text_color()`
+    // — used by `.weak()` labels, the status bar and TextEdit hint text — is a
+    // 50% blend between this colour and `window_fill` (white), so a darker base
+    // here yields noticeably less-washed-out faded text.
+    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, Color32::from_rgb(24, 24, 28));
 
     v.selection.bg_fill = Color32::from_rgb(214, 214, 220);
     v.selection.stroke = Stroke::new(1.0, Color32::BLACK);
@@ -181,6 +221,36 @@ struct Loaded {
     /// Sub-row scroll remainder (pixels) accumulated from the mouse wheel so
     /// that slow scrolling still advances smoothly one row at a time.
     scroll_residual: f32,
+    /// Current cell-range selection (anchor + focus), if any.
+    sel: Option<CellSel>,
+    /// True while the primary mouse button is held during a drag-select.
+    selecting: bool,
+}
+
+/// A rectangular cell-range selection, like a spreadsheet. `anchor` is where
+/// the drag started; `focus` is the cell currently under the pointer.
+#[derive(Clone, Copy)]
+struct CellSel {
+    anchor: (u64, usize),
+    focus: (u64, usize),
+}
+
+impl CellSel {
+    fn single(row: u64, col: usize) -> Self {
+        CellSel {
+            anchor: (row, col),
+            focus: (row, col),
+        }
+    }
+    fn row_range(&self) -> std::ops::RangeInclusive<u64> {
+        self.anchor.0.min(self.focus.0)..=self.anchor.0.max(self.focus.0)
+    }
+    fn col_range(&self) -> std::ops::RangeInclusive<usize> {
+        self.anchor.1.min(self.focus.1)..=self.anchor.1.max(self.focus.1)
+    }
+    fn contains(&self, row: u64, col: usize) -> bool {
+        self.row_range().contains(&row) && self.col_range().contains(&col)
+    }
 }
 
 impl Loaded {
@@ -363,6 +433,8 @@ fn load_file(path: PathBuf, progress: &AtomicU64) -> LoadMsg {
         cache: HashMap::new(),
         top_row: 0,
         scroll_residual: 0.0,
+        sel: None,
+        selecting: false,
     }))
 }
 
@@ -845,6 +917,42 @@ impl App {
     }
 }
 
+/// Spreadsheet palette (Google Sheets-like).
+const GRID_LINE: egui::Color32 = egui::Color32::from_rgb(218, 220, 224); // #dadce0
+const HEADER_BG: egui::Color32 = egui::Color32::from_rgb(248, 249, 250); // #f8f9fa
+const HEADER_TEXT: egui::Color32 = egui::Color32::from_rgb(95, 99, 104); // #5f6368
+const CELL_BG: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
+const CELL_TEXT: egui::Color32 = egui::Color32::from_rgb(32, 33, 36); // #202124
+const NUM_TEXT: egui::Color32 = egui::Color32::from_rgb(128, 132, 138);
+const SEL_BG: egui::Color32 = egui::Color32::from_rgb(232, 240, 254); // #e8f0fe
+const SEL_HEADER: egui::Color32 = egui::Color32::from_rgb(174, 203, 250); // #aecbfa
+const SEL_BORDER: egui::Color32 = egui::Color32::from_rgb(26, 115, 232); // #1a73e8
+const FIND_BG: egui::Color32 = egui::Color32::from_rgb(255, 241, 194); // soft yellow
+
+/// Fill a table cell and draw its gridlines, returning the cell rectangle.
+///
+/// Every cell paints its right + bottom border; the left/top borders are only
+/// drawn for the first column / header row so the outer edges of the grid are
+/// closed. Because each cell paints relative to its own `max_rect`, the lines
+/// track the columns even as they are resized.
+fn paint_cell(ui: &egui::Ui, fill: Option<egui::Color32>, left: bool, top: bool) -> egui::Rect {
+    let rect = ui.max_rect();
+    let p = ui.painter();
+    if let Some(f) = fill {
+        p.rect_filled(rect, 0.0, f);
+    }
+    let stroke = egui::Stroke::new(1.0, GRID_LINE);
+    p.hline(rect.x_range(), rect.bottom() - 0.5, stroke);
+    p.vline(rect.right() - 0.5, rect.y_range(), stroke);
+    if left {
+        p.vline(rect.left() + 0.5, rect.y_range(), stroke);
+    }
+    if top {
+        p.hline(rect.x_range(), rect.top() + 0.5, stroke);
+    }
+    rect
+}
+
 /// Render the virtualized data table. Only visible rows are parsed/drawn.
 ///
 /// We do **not** use egui_extras' built-in vertical scroll for paging through
@@ -869,11 +977,11 @@ fn show_table(
     if total_rows == 0 {
         return;
     }
-    let row_height = ui.text_style_height(&egui::TextStyle::Body) + 8.0;
-    let spacing_y = ui.spacing().item_spacing.y;
+    ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+    let row_height = ui.text_style_height(&egui::TextStyle::Body) + 9.0;
+    let spacing_y = 0.0;
     let row_pitch = row_height + spacing_y;
     let ncols = loaded.headers.len().max(1);
-    let num_color = ui.visuals().weak_text_color();
 
     // Size the row-number column to the widest number it must show.
     let digits = (total_rows.max(1) as f64).log10().floor() as f32 + 1.0;
@@ -1021,6 +1129,22 @@ fn show_table(
     let start = loaded.top_row;
     let count = visible_draw.min(total_rows - start) as usize;
 
+    // Snapshot the selection for read-only fills; live edits below take effect
+    // on the next repaint (which we request while dragging).
+    let sel_view = loaded.sel;
+    // Set by the context-menu "Copy"; consumed after the table renders so the
+    // copy code can borrow `loaded` without fighting the row closures.
+    let copy_request = std::cell::Cell::new(false);
+    // Screen-space bounds of the visible selection, used to stroke its border.
+    let sel_bounds: std::cell::Cell<Option<egui::Rect>> = std::cell::Cell::new(None);
+
+    let primary_down = ui.input(|i| i.pointer.primary_down());
+    let shift = ui.input(|i| i.modifiers.shift);
+    // Pointer position in screen space. We hit-test cells against this directly
+    // rather than relying on per-widget `hovered()`, because egui locks pointer
+    // interaction to the origin widget for the duration of a drag.
+    let pointer_pos = ui.input(|i| i.pointer.interact_pos());
+
     ui.scope_builder(egui::UiBuilder::new().max_rect(table_rect), |ui| {
         // egui_extras' Table only scrolls vertically; wrap it in a horizontal
         // scroll area for wide files. The table's own vertical scroll is
@@ -1028,12 +1152,13 @@ fn show_table(
         // window is ever laid out and there is no f32 precision problem.
         egui::ScrollArea::horizontal()
             .auto_shrink([false, false])
+            .drag_to_scroll(false)
             .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
             .show(ui, |ui| {
                 ui.set_width(table_w);
 
                 let mut builder = TableBuilder::new(ui)
-                    .striped(true)
+                    .striped(false)
                     .resizable(true)
                     .vscroll(false)
                     .auto_shrink([false, false])
@@ -1050,44 +1175,194 @@ fn show_table(
 
                 builder
                     .header(header_h, |mut header| {
+                        let corner_sel = sel_view.is_some();
                         header.col(|ui| {
-                            ui.strong("#");
+                            paint_cell(
+                                ui,
+                                Some(if corner_sel { SEL_HEADER } else { HEADER_BG }),
+                                true,
+                                true,
+                            );
                         });
-                        for name in &loaded.headers {
+                        for (i, name) in loaded.headers.iter().enumerate() {
+                            let col_sel =
+                                sel_view.map_or(false, |s| s.col_range().contains(&i));
                             header.col(|ui| {
-                                ui.strong(name);
+                                paint_cell(
+                                    ui,
+                                    Some(if col_sel { SEL_HEADER } else { HEADER_BG }),
+                                    false,
+                                    true,
+                                );
+                                ui.add_space(8.0);
+                                let mut t = egui::RichText::new(name)
+                                    .color(if col_sel { SEL_BORDER } else { HEADER_TEXT });
+                                if col_sel {
+                                    t = t.strong();
+                                }
+                                ui.add(egui::Label::new(t).selectable(false).truncate());
                             });
                         }
                     })
                     .body(|body| {
                         body.rows(row_height, count, |mut row| {
                             let abs = start + row.index() as u64;
-                            row.set_selected(highlight == Some(abs));
+                            let row_in_sel =
+                                sel_view.map_or(false, |s| s.row_range().contains(&abs));
+                            let found = highlight == Some(abs);
+
+                            // Row-number cell.
                             row.col(|ui| {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new((abs + 1).to_string())
-                                            .monospace()
-                                            .color(num_color),
-                                    )
-                                    .selectable(false),
-                                );
+                                let fill = if row_in_sel { SEL_HEADER } else { HEADER_BG };
+                                paint_cell(ui, Some(fill), true, false);
+                                ui.centered_and_justified(|ui| {
+                                    let mut t = egui::RichText::new((abs + 1).to_string())
+                                        .color(if row_in_sel { SEL_BORDER } else { NUM_TEXT });
+                                    if row_in_sel {
+                                        t = t.strong();
+                                    }
+                                    ui.add(egui::Label::new(t).selectable(false));
+                                });
                             });
+
                             let cells = loaded.row(abs);
                             for c in 0..ncols {
+                                let in_sel = sel_view.map_or(false, |s| s.contains(abs, c));
                                 row.col(|ui| {
-                                    let text = cells.get(c).map(String::as_str).unwrap_or("");
-                                    if !text.is_empty() {
-                                        // `truncate()` already shows the full
-                                        // value as a tooltip when clipped.
-                                        ui.add(egui::Label::new(text).truncate());
+                                    let fill = if in_sel {
+                                        SEL_BG
+                                    } else if found {
+                                        FIND_BG
+                                    } else {
+                                        CELL_BG
+                                    };
+                                    let rect = paint_cell(ui, Some(fill), false, false);
+                                    if in_sel {
+                                        let cur = sel_bounds.get();
+                                        sel_bounds
+                                            .set(Some(cur.map_or(rect, |b| b.union(rect))));
                                     }
+
+                                    // One interactive surface per cell so a click
+                                    // or right-click anywhere in the cell works.
+                                    let resp = ui.interact(
+                                        rect,
+                                        egui::Id::new(("cell", abs, c)),
+                                        egui::Sense::click_and_drag(),
+                                    );
+
+                                    // Start the selection (plain click or drag),
+                                    // or extend it with Shift+click.
+                                    if resp.drag_started() || (resp.clicked() && !shift) {
+                                        loaded.sel = Some(CellSel::single(abs, c));
+                                        loaded.selecting = true;
+                                    } else if shift && resp.clicked() {
+                                        match &mut loaded.sel {
+                                            Some(s) => s.focus = (abs, c),
+                                            None => loaded.sel = Some(CellSel::single(abs, c)),
+                                        }
+                                    }
+                                    // Extend while dragging: hit-test the pointer
+                                    // directly (see `pointer_pos` note above).
+                                    if loaded.selecting && primary_down {
+                                        if let Some(p) = pointer_pos {
+                                            if rect.contains(p) {
+                                                if let Some(s) = &mut loaded.sel {
+                                                    s.focus = (abs, c);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Right-click selects the cell unless it is
+                                    // already inside the current selection.
+                                    if resp.secondary_clicked() {
+                                        let inside = loaded
+                                            .sel
+                                            .map_or(false, |s| s.contains(abs, c));
+                                        if !inside {
+                                            loaded.sel = Some(CellSel::single(abs, c));
+                                        }
+                                    }
+
+                                    ui.add_space(8.0);
+                                    let text =
+                                        cells.get(c).map(String::as_str).unwrap_or("");
+                                    if !text.is_empty() {
+                                        // `truncate()` shows the full value as a
+                                        // tooltip when the text is clipped.
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(text).color(CELL_TEXT),
+                                            )
+                                            .selectable(false)
+                                            .truncate(),
+                                        );
+                                    }
+
+                                    resp.context_menu(|ui| {
+                                        if ui.button("Copy").clicked() {
+                                            copy_request.set(true);
+                                            ui.close_menu();
+                                        }
+                                    });
                                 });
                             }
                         });
                     });
+
+                // Spreadsheet-style border around the selected range.
+                if let Some(b) = sel_bounds.get() {
+                    ui.painter()
+                        .rect_stroke(b, 0.0, egui::Stroke::new(2.0, SEL_BORDER));
+                }
             });
     });
+
+    // Release the drag when the mouse button is up.
+    if !primary_down {
+        loaded.selecting = false;
+    }
+    if loaded.selecting {
+        ui.ctx().request_repaint();
+    }
+
+    // Copy the selection — context-menu "Copy" or Ctrl/Cmd+C — as TSV.
+    let ctrl_c =
+        !typing && ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::C));
+    if copy_request.get() || ctrl_c {
+        if let Some(text) = selection_to_tsv(loaded, ncols) {
+            ui.ctx().copy_text(text);
+        }
+    }
+}
+
+/// Serialize the current cell selection as tab-separated rows (TSV), suitable
+/// for pasting into a spreadsheet. Returns `None` if nothing is selected.
+fn selection_to_tsv(loaded: &mut Loaded, ncols: usize) -> Option<String> {
+    let sel = loaded.sel?;
+    let cols = sel.col_range();
+    let mut out = String::new();
+    for r in sel.row_range() {
+        let cells = loaded.row(r);
+        let mut first = true;
+        for c in cols.clone() {
+            if c >= ncols {
+                continue;
+            }
+            if !first {
+                out.push('\t');
+            }
+            first = false;
+            if let Some(v) = cells.get(c) {
+                out.push_str(v);
+            }
+        }
+        out.push('\n');
+    }
+    if out.ends_with('\n') {
+        out.pop();
+    }
+    Some(out)
 }
 
 /// Draw a short, subtle vertical divider between toolbar groups (lighter and

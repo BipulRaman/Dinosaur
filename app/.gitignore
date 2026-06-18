@@ -8,6 +8,10 @@
 # Cargo lock is kept for binaries; remove the next line to ignore it
 # Cargo.lock
 
+# Generated test data
+/samples/
+**/samples/
+
 # Editor / OS files
 .vscode/
 .idea/
