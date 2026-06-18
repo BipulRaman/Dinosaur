@@ -35,7 +35,7 @@
         <h1>Open <span class="grad">giant</span> data files<br />instantly.</h1>
         <p class="lead">
           Dinosaur is a native desktop viewer for <strong>very large</strong>
-          CSV, TSV, JSON and TXT files. Scroll through files of <strong>170&nbsp;GB and beyond</strong>
+          CSV, TSV, NDJSON and TXT files. Scroll through files of <strong>170&nbsp;GB and beyond</strong>
           without waiting — because it never loads the whole file into memory.
         </p>
         <div class="hero-actions">
@@ -163,10 +163,10 @@
       <div class="formats">
         <div class="fmt"><span class="fmt-ext">.csv</span><span>Comma-separated values</span></div>
         <div class="fmt"><span class="fmt-ext">.tsv</span><span>Tab-separated values</span></div>
-        <div class="fmt"><span class="fmt-ext">.ndjson</span><span>JSON lines — keys become columns</span></div>
+        <div class="fmt"><span class="fmt-ext">.ndjson</span><span>JSON Lines (NDJSON) — one JSON value per line; first object's keys become columns</span></div>
         <div class="fmt"><span class="fmt-ext">.txt / .log</span><span>One line per row</span></div>
       </div>
-      <p class="fine">Use newline-delimited JSON (NDJSON) for large JSON data — a single giant JSON array isn't streamed.</p>
+      <p class="fine">JSON must be <strong>newline-delimited (NDJSON / JSON Lines)</strong> — every line a complete JSON value. Nested values show as compact JSON text in the cell; columns come from the first line. A single pretty-printed JSON array/object spanning many lines isn't streamed — convert it first, e.g. <code>jq -c '.[]' big.json &gt; big.ndjson</code>.</p>
     </section>
 
     <!-- Download CTA -->

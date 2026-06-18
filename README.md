@@ -62,12 +62,26 @@ Dinosaur.exe path\to\huge.csv
 
 - **CSV** (`.csv`) — comma-separated. Columns are shown as `Column 1`, `Column 2`, …
 - **TSV** (`.tsv`) — tab-separated. Columns are shown as `Column 1`, `Column 2`, …
-- **JSON lines** (`.json`, `.ndjson`, `.jsonl`) — one JSON object per line (NDJSON). Object keys become columns.
+- **JSON lines / NDJSON** (`.json`, `.ndjson`, `.jsonl`) — **one self-contained JSON value per line**. The keys of the *first* object become the columns; each row's values are filled in under them.
 - **Text** (`.txt`, `.log`, anything else) — one line per row.
 
+> **Which JSON works?** Dinosaur reads **newline-delimited JSON (NDJSON / JSON
+> Lines)** — every line must be a complete JSON value on its own. This is what
+> lets it stream files of any size.
+>
+> - ✅ One object per line: `{"id":1,"name":"Ada"}` then `{"id":2,"name":"Linus"}`
+> - ⚠️ **Nested** values (objects/arrays) are shown as their compact JSON **text**
+>   inside the cell — they are not expanded into sub-columns.
+> - ⚠️ **Heterogeneous** records work, but columns come from the **first line
+>   only**; keys that appear solely in later rows are not shown, and missing keys
+>   render blank.
+> - ❌ A single **pretty-printed** JSON document — one big `[ … ]` / `{ … }`
+>   spanning many lines — is **not** supported in streaming mode (each physical
+>   line would be treated as its own row). Convert it to NDJSON first, e.g.
+>   `jq -c '.[]' big.json > big.ndjson`.
+>
 > Every physical line is treated as data — Dinosaur does not hide the first line
-> as a header. A single giant JSON array/object (not line-delimited) is
-> intentionally not supported in streaming mode; use NDJSON for large JSON data.
+> as a header.
 
 ## Usage
 

@@ -28,6 +28,10 @@ use index::{LineIndex, DEFAULT_SAMPLE};
 /// The app logo, authored as a vector file and embedded at compile time.
 const LOGO_SVG: &[u8] = include_bytes!("../assets/logo.svg");
 
+/// The flag of India (with an accurate 24-spoke Ashoka Chakra), embedded for
+/// the About dialog credit line.
+const INDIA_FLAG_SVG: &[u8] = include_bytes!("../assets/india_flag.svg");
+
 fn main() -> eframe::Result<()> {
     // Force Mesa's pure-CPU rasterizer (llvmpipe). Combined with the Mesa
     // `opengl32.dll` shipped next to the executable, this makes the app render
@@ -976,26 +980,55 @@ impl App {
                 let accent = egui::Color32::from_rgb(124, 58, 237); // brand purple
                 let ink = egui::Color32::from_rgb(40, 41, 48);
                 let muted = egui::Color32::from_rgb(140, 142, 150);
-                ui.set_width(300.0);
+                ui.set_width(320.0);
 
                 ui.vertical_centered(|ui| {
-                    ui.add(
-                        egui::Image::new(egui::ImageSource::Bytes {
-                            uri: "bytes://logo.svg".into(),
-                            bytes: LOGO_SVG.into(),
-                        })
-                        .fit_to_exact_size(egui::vec2(88.0, 88.0)),
+                    // Logo on a soft rounded badge for a more finished look.
+                    let badge = 96.0;
+                    let (brect, _) =
+                        ui.allocate_exact_size(egui::vec2(badge, badge), egui::Sense::hover());
+                    ui.painter().rect_filled(
+                        brect,
+                        egui::Rounding::same(22.0),
+                        egui::Color32::from_rgb(246, 244, 253),
                     );
+                    let logo_rect =
+                        egui::Rect::from_center_size(brect.center(), egui::vec2(62.0, 62.0));
+                    egui::Image::new(egui::ImageSource::Bytes {
+                        uri: "bytes://logo.svg".into(),
+                        bytes: LOGO_SVG.into(),
+                    })
+                    .paint_at(ui, logo_rect);
+
+                    ui.add_space(14.0);
+                    ui.label(egui::RichText::new("Dinosaur").size(25.0).strong().color(ink));
+
+                    // Version pill.
+                    ui.add_space(8.0);
+                    {
+                        let ver = format!("Version {}", env!("CARGO_PKG_VERSION"));
+                        let font = egui::FontId::proportional(11.5);
+                        let galley = ui.fonts(|f| f.layout_no_wrap(ver, font, muted));
+                        let pad = egui::vec2(11.0, 4.5);
+                        let size = galley.size() + pad * 2.0;
+                        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::Rounding::same(rect.height() * 0.5),
+                            egui::Color32::from_rgb(243, 244, 246),
+                        );
+                        ui.painter()
+                            .galley(rect.left_top() + pad, galley, muted);
+                    }
+
                     ui.add_space(12.0);
-                    ui.label(egui::RichText::new("Dinosaur").size(26.0).strong().color(ink));
-                    ui.add_space(3.0);
                     ui.label(
-                        egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
-                            .size(12.0)
+                        egui::RichText::new("Viewer for very large CSV, TSV, JSON & text files")
+                            .size(12.5)
                             .color(muted),
                     );
 
-                    ui.add_space(18.0);
+                    ui.add_space(20.0);
                     // Hairline divider.
                     let w = ui.available_width();
                     let (line, _) =
@@ -1005,16 +1038,18 @@ impl App {
                         line.center().y,
                         egui::Stroke::new(1.0, egui::Color32::from_rgb(236, 236, 240)),
                     );
-                    ui.add_space(18.0);
+                    ui.add_space(20.0);
 
                     // "Made with ❤ in 🇮🇳 By Bipul Raman" — a horizontally
                     // centered row. egui won't auto-centre a left-to-right row,
                     // so measure the content width and let `vertical_centered`
                     // centre the fixed-size block.
+                    let soft = egui::Color32::from_rgb(96, 98, 106); // softer than `ink`
+                    let glyph_h = 15.0; // shared height so heart, flag & text align
                     let font14 = egui::FontId::proportional(14.0);
                     let tw = |ui: &egui::Ui, s: &str| {
                         ui.fonts(|f| {
-                            f.layout_no_wrap(s.to_owned(), font14.clone(), ink).size().x
+                            f.layout_no_wrap(s.to_owned(), font14.clone(), soft).size().x
                         })
                     };
                     let gap = 6.0;
@@ -1022,34 +1057,37 @@ impl App {
                         + tw(ui, "in")
                         + tw(ui, "By")
                         + tw(ui, "Bipul Raman")
-                        + 16.0 * 1.05   // heart width
-                        + 24.0 * 1.5    // flag width
+                        + glyph_h * 1.05   // heart width
+                        + glyph_h * 1.5    // flag width
                         + gap * 5.0
                         + 6.0;          // bold + slack
                     ui.allocate_ui_with_layout(
-                        egui::vec2(content_w, 26.0),
+                        egui::vec2(content_w, glyph_h.max(20.0)),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             ui.spacing_mut().item_spacing.x = gap;
                             ui.visuals_mut().hyperlink_color = accent;
-                            let txt = |s: &str| egui::RichText::new(s).size(14.0).color(ink);
+                            let txt = |s: &str| egui::RichText::new(s).size(14.0).color(soft);
                             ui.label(txt("Made with"));
-                            paint_heart(ui, 16.0);
+                            paint_heart(ui, glyph_h);
                             ui.label(txt("in"));
-                            paint_india_flag(ui, 24.0);
+                            paint_india_flag(ui, glyph_h);
                             ui.label(txt("By"));
                             ui.hyperlink_to(
-                                egui::RichText::new("Bipul Raman").size(14.0).strong(),
+                                egui::RichText::new("Bipul Raman")
+                                    .size(14.0)
+                                    .strong()
+                                    .color(accent),
                                 "https://bipul.in",
                             );
                         },
                     );
 
-                    ui.add_space(14.0);
+                    ui.add_space(16.0);
                     ui.scope(|ui| {
                         ui.visuals_mut().hyperlink_color = accent;
                         ui.hyperlink_to(
-                            egui::RichText::new("github.com/BipulRaman/Dinosaur").size(13.0),
+                            egui::RichText::new("github.com/BipulRaman/Dinosaur").size(12.5),
                             "https://github.com/BipulRaman/Dinosaur",
                         );
                     });
@@ -1505,10 +1543,51 @@ fn show_table(
                                 sel_view.map_or(false, |s| s.row_range().contains(&abs));
                             let found = highlight == Some(abs);
 
-                            // Row-number cell.
+                            // Row-number cell. Clicking it selects the whole
+                            // row; dragging or Shift+click extends the range.
                             row.col(|ui| {
                                 let fill = if row_in_sel { SEL_HEADER } else { HEADER_BG };
-                                paint_cell(ui, Some(fill), true, false);
+                                let rect = paint_cell(ui, Some(fill), true, false);
+
+                                let last_col = ncols.saturating_sub(1);
+                                let resp = ui.interact(
+                                    rect,
+                                    egui::Id::new(("rownum", abs)),
+                                    egui::Sense::click_and_drag(),
+                                );
+                                if resp.drag_started() || (resp.clicked() && !shift) {
+                                    loaded.sel = Some(CellSel {
+                                        anchor: (abs, 0),
+                                        focus: (abs, last_col),
+                                    });
+                                    loaded.selecting = true;
+                                } else if shift && resp.clicked() {
+                                    match &mut loaded.sel {
+                                        Some(s) => {
+                                            s.anchor.1 = 0;
+                                            s.focus = (abs, last_col);
+                                        }
+                                        None => {
+                                            loaded.sel = Some(CellSel {
+                                                anchor: (abs, 0),
+                                                focus: (abs, last_col),
+                                            })
+                                        }
+                                    }
+                                }
+                                // Extend across rows while dragging over the
+                                // row-number column, keeping full-width rows.
+                                if loaded.selecting && primary_down {
+                                    if let Some(p) = pointer_pos {
+                                        if rect.contains(p) {
+                                            if let Some(s) = &mut loaded.sel {
+                                                s.anchor.1 = 0;
+                                                s.focus = (abs, last_col);
+                                            }
+                                        }
+                                    }
+                                }
+
                                 ui.centered_and_justified(|ui| {
                                     let mut t = egui::RichText::new((abs + 1).to_string())
                                         .color(if row_in_sel { SEL_BORDER } else { NUM_TEXT });
@@ -1594,7 +1673,14 @@ fn show_table(
                                     }
 
                                     resp.context_menu(|ui| {
-                                        if ui.button("Copy").clicked() {
+                                        ui.set_min_width(112.0);
+                                        if ui
+                                            .add_sized(
+                                                [ui.available_width(), 28.0],
+                                                egui::Button::new("Copy"),
+                                            )
+                                            .clicked()
+                                        {
                                             copy_request.set(true);
                                             ui.close_menu();
                                         }
@@ -1621,9 +1707,13 @@ fn show_table(
     }
 
     // Copy the selection — context-menu "Copy" or Ctrl/Cmd+C — as TSV.
-    let ctrl_c =
-        !typing && ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::C));
-    if copy_request.get() || ctrl_c {
+    // egui may surface the shortcut either as a dedicated `Event::Copy` or as a
+    // plain `C` key press with the command/ctrl modifier, so accept both.
+    let copy_shortcut = ui.input(|i| {
+        i.events.iter().any(|e| matches!(e, egui::Event::Copy))
+            || ((i.modifiers.command || i.modifiers.ctrl) && i.key_pressed(egui::Key::C))
+    });
+    if copy_request.get() || (!typing && copy_shortcut) {
         if let Some(text) = selection_to_tsv(loaded, ncols) {
             ui.ctx().copy_text(text);
         }
@@ -1699,58 +1789,16 @@ fn paint_heart(ui: &mut egui::Ui, size: f32) {
     ));
 }
 
-/// Draw a proper flag of India: saffron / white / green bands with the
-/// navy-blue Ashoka Chakra (24 spokes) centred on the white band.
+/// Draw the flag of India by rendering the embedded SVG (accurate tricolour
+/// bands and 24-spoke Ashoka Chakra) at the requested height (3:2 ratio).
 fn paint_india_flag(ui: &mut egui::Ui, height: f32) {
     let width = height * 1.5; // Official 3:2 ratio.
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
-    let p = ui.painter();
-    let band = height / 3.0;
-
-    let saffron = egui::Color32::from_rgb(0xFF, 0x99, 0x33);
-    let white = egui::Color32::from_rgb(0xFF, 0xFF, 0xFF);
-    let green = egui::Color32::from_rgb(0x13, 0x88, 0x08);
-    let navy = egui::Color32::from_rgb(0x00, 0x00, 0x80);
-
-    let top = rect.top();
-    p.rect_filled(
-        egui::Rect::from_min_size(rect.left_top(), egui::vec2(width, band)),
-        0.0,
-        saffron,
-    );
-    p.rect_filled(
-        egui::Rect::from_min_size(egui::pos2(rect.left(), top + band), egui::vec2(width, band)),
-        0.0,
-        white,
-    );
-    p.rect_filled(
-        egui::Rect::from_min_size(egui::pos2(rect.left(), top + 2.0 * band), egui::vec2(width, band)),
-        0.0,
-        green,
-    );
-
-    // Ashoka Chakra — draw spokes first, then the rim and hub on top so the
-    // centre stays crisp instead of turning into a muddy blob.
-    let center = egui::pos2(rect.center().x.round() + 0.5, (top + band * 1.5).round());
-    let radius = band * 0.5;
-    let line = (height * 0.035).max(0.8);
-    for i in 0..24 {
-        let a = std::f32::consts::TAU * (i as f32) / 24.0;
-        let dir = egui::vec2(a.cos(), a.sin());
-        p.line_segment(
-            [center, center + dir * radius],
-            egui::Stroke::new(line * 0.6, navy),
-        );
-    }
-    p.circle_stroke(center, radius, egui::Stroke::new(line, navy));
-    p.circle_filled(center, radius * 0.2, navy);
-
-    // Thin neutral border so the white band is visible on light backgrounds.
-    p.rect_stroke(
-        rect,
-        0.0,
-        egui::Stroke::new(0.8, egui::Color32::from_rgb(0xCC, 0xCC, 0xD0)),
-    );
+    egui::Image::new(egui::ImageSource::Bytes {
+        uri: "bytes://india_flag.svg".into(),
+        bytes: INDIA_FLAG_SVG.into(),
+    })
+    .paint_at(ui, rect);
 }
 
 /// Format a row count with thousands separators (e.g. `1,234,567`).
