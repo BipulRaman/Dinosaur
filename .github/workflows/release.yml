@@ -44,6 +44,19 @@ jobs:
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Packaging version $version"
 
+      # Make the release tag the single source of truth: stamp it into
+      # Cargo.toml so the app's embedded CARGO_PKG_VERSION (shown in the About
+      # dialog), the ZIP name and Cargo metadata all match the release.
+      - name: Stamp version into Cargo.toml
+        shell: pwsh
+        run: |
+          $version = "${{ steps.ver.outputs.version }}"
+          $path = 'app/Cargo.toml'
+          $c = Get-Content $path -Raw
+          $c = [regex]::Replace($c, '(?m)^(version\s*=\s*")[^"]*(")', "`${1}$version`${2}", 1)
+          Set-Content $path $c -NoNewline
+          Write-Host "Cargo.toml version set to $version"
+
       - name: Build portable ZIP
         shell: pwsh
         run: pwsh scripts/package.ps1 -Version "${{ steps.ver.outputs.version }}"
