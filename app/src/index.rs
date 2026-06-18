@@ -157,12 +157,15 @@ impl LineIndex {
     /// record only when it is *not* inside a double-quoted field, so cells that
     /// contain embedded newlines stay on a single logical row.
     ///
-    /// Quote parity is additive, so it can still be computed in parallel: count
-    /// the `"` characters in each chunk, prefix-sum them, and the parity of the
-    /// count preceding a chunk tells us whether that chunk starts inside a
-    /// quoted field. Every logical line begins right after a record-terminating
-    /// newline and is therefore always outside quotes, which is why checkpoints
-    /// need no extra state.
+    /// Quote parity is additive, so it can still be computed in parallel. The
+    /// catch is that whether a chunk *starts* inside a quoted field depends on
+    /// the quote parity of every preceding chunk, which we don't know until all
+    /// chunks have been counted. To avoid a third pass we count, in one pass,
+    /// the record-terminating newlines for *both* possible entry parities
+    /// (`term_even` if the chunk starts outside quotes, `term_odd` if inside)
+    /// together with the chunk's quote count. After prefix-summing the quote
+    /// counts we know each chunk's true entry parity and simply pick the
+    /// matching terminator count. A second pass then emits the checkpoints.
     fn build_quote_aware(
         data: &[u8],
         sample: u64,
@@ -171,62 +174,69 @@ impl LineIndex {
     ) -> Self {
         let len = data.len();
 
-        // Pass 1: count quote characters per chunk to derive the quote parity
-        // at every chunk boundary.
-        let quote_counts: Vec<u64> = bounds
+        // Pass 1: per chunk, count quotes plus the record-terminating newlines
+        // for each possible entry parity. A newline at running in-chunk quote
+        // parity `p` is a terminator when the chunk's entry parity equals `p`.
+        struct ChunkCount {
+            quotes: u64,
+            term_even: u64,
+            term_odd: u64,
+        }
+        let counts: Vec<ChunkCount> = bounds
             .par_iter()
             .map(|&(s, e)| {
-                let c = memchr_iter(b'"', &data[s..e]).count() as u64;
-                progress.fetch_add(((e - s) as u64) / 3, Ordering::Relaxed);
-                c
-            })
-            .collect();
-
-        let mut quote_base = vec![0u64; bounds.len()];
-        let mut q_run = 0u64;
-        for i in 0..bounds.len() {
-            quote_base[i] = q_run;
-            q_run += quote_counts[i];
-        }
-        let total_quotes = q_run;
-
-        // Pass 2: count record-terminating newlines per chunk, honouring the
-        // quote parity inherited at the chunk's start.
-        let rec_counts: Vec<u64> = bounds
-            .par_iter()
-            .enumerate()
-            .map(|(ci, &(s, e))| {
-                let mut inside = (quote_base[ci] & 1) == 1;
+                let mut quotes = 0u64;
+                let mut term_even = 0u64;
+                let mut term_odd = 0u64;
+                let mut qparity = 0u8; // running (#quotes seen in chunk) & 1
                 let mut pos = s;
-                let mut count = 0u64;
                 while pos < e {
                     match memchr2(b'"', b'\n', &data[pos..e]) {
                         Some(rel) => {
                             let abs = pos + rel;
                             if data[abs] == b'"' {
-                                inside = !inside;
-                            } else if !inside {
-                                count += 1;
+                                quotes += 1;
+                                qparity ^= 1;
+                            } else if qparity == 0 {
+                                term_even += 1;
+                            } else {
+                                term_odd += 1;
                             }
                             pos = abs + 1;
                         }
                         None => break,
                     }
                 }
-                progress.fetch_add(((e - s) as u64) / 3, Ordering::Relaxed);
-                count
+                progress.fetch_add(((e - s) as u64) / 2, Ordering::Relaxed);
+                ChunkCount {
+                    quotes,
+                    term_even,
+                    term_odd,
+                }
             })
             .collect();
 
+        // Prefix-sum quotes to get the entry parity of each chunk, then pick the
+        // matching terminator count to get the running line base.
+        let mut quote_base = vec![0u64; bounds.len()];
         let mut rec_base = vec![0u64; bounds.len()];
+        let mut q_run = 0u64;
         let mut r_run = 0u64;
         for i in 0..bounds.len() {
+            quote_base[i] = q_run;
             rec_base[i] = r_run;
-            r_run += rec_counts[i];
+            let entry_inside = (q_run & 1) == 1;
+            r_run += if entry_inside {
+                counts[i].term_odd
+            } else {
+                counts[i].term_even
+            };
+            q_run += counts[i].quotes;
         }
+        let total_quotes = q_run;
         let total_terminators = r_run;
 
-        // Pass 3: record the start offset of every `sample`-th logical line.
+        // Pass 2: record the start offset of every `sample`-th logical line.
         let per_chunk: Vec<Vec<u64>> = bounds
             .par_iter()
             .enumerate()
@@ -255,7 +265,7 @@ impl LineIndex {
                         None => break,
                     }
                 }
-                progress.fetch_add(((e - s) as u64) / 3, Ordering::Relaxed);
+                progress.fetch_add(((e - s) as u64) / 2, Ordering::Relaxed);
                 out
             })
             .collect();

@@ -19,8 +19,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # rust-toolchain.toml pins stable-x86_64-pc-windows-gnu; rustup installs it
-      # automatically on first cargo invocation inside app/.
+      # rust-toolchain.toml pins the x86_64-pc-windows-gnu target; rustup
+      # installs the toolchain and target automatically on first cargo use.
       - name: Show Rust toolchain
         working-directory: app
         run: rustup show

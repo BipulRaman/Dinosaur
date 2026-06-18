@@ -1,2 +1,8 @@
 [toolchain]
-channel = "stable-x86_64-pc-windows-gnu"
+# Build with the GNU (mingw-w64) Windows target. We pin the *target* rather than
+# baking it into the channel name (`stable-x86_64-pc-windows-gnu`), because newer
+# rustup rejects a target tuple in the channel name. The GNU target links
+# self-contained, so it builds on both GNU- and MSVC-host machines (e.g. CI)
+# without an external mingw install.
+channel = "stable"
+targets = ["x86_64-pc-windows-gnu"]
