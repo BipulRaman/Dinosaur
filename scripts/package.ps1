@@ -52,8 +52,12 @@ Write-Host "Packaging Dinosaur v$Version" -ForegroundColor Cyan
 if (-not $SkipBuild) {
     Get-Process Dinosaur -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 1
-    # Make sure the GNU toolchain (with its self-contained linker) is present.
-    rustup toolchain install $Toolchain --no-self-update | Out-Null
+    # Make sure the GNU toolchain is present *with* the `rust-mingw` component.
+    # CI runners install toolchains with the minimal profile, which omits
+    # rust-mingw; without it the GNU target has no bundled mingw libs and even
+    # host build scripts fail to link. Requesting the component explicitly fixes
+    # that and is a no-op when it is already installed (e.g. on a dev machine).
+    rustup toolchain install $Toolchain --no-self-update --component rust-mingw | Out-Null
     Push-Location $AppDir
     try { cargo "+$Toolchain" build --release --target $Target } finally { Pop-Location }
 }
