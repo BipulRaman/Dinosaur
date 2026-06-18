@@ -1,0 +1,18 @@
+# Rust build output
+/target/
+**/target/
+
+# Backtrace / debug artifacts
+*.pdb
+
+# Cargo lock is kept for binaries; remove the next line to ignore it
+# Cargo.lock
+
+# Editor / OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini

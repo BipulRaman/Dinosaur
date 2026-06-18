@@ -1,0 +1,6 @@
+# Pin the full MinGW-w64 toolchain (installed via Chocolatey) so linking works
+# regardless of PATH. The bundled rust-mingw lacks some import libraries
+# (e.g. libshlwapi.a), which breaks the glow/winit dependencies.
+[target.x86_64-pc-windows-gnu]
+linker = "C:\\ProgramData\\mingw64\\mingw64\\bin\\x86_64-w64-mingw32-gcc.exe"
+rustflags = ["-L", "C:\\ProgramData\\mingw64\\mingw64\\x86_64-w64-mingw32\\lib"]
