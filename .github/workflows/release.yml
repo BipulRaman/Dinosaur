@@ -57,6 +57,27 @@ jobs:
           Set-Content $path $c -NoNewline
           Write-Host "Cargo.toml version set to $version"
 
+      # The x86_64-pc-windows-gnu target links through mingw-w64's gcc. The
+      # runner pre-sets CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER to a mingw gcc
+      # path that isn't always present on the image, so we install mingw-w64 and
+      # wire the linker (and PATH) to wherever it actually landed.
+      - name: Install MinGW-w64 (GNU linker)
+        shell: pwsh
+        run: |
+          choco install mingw -y --no-progress
+          $gcc = Get-ChildItem -Path 'C:\ProgramData\mingw64','C:\ProgramData\chocolatey\lib\mingw' `
+                   -Recurse -Filter 'x86_64-w64-mingw32-gcc.exe' -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+          if (-not $gcc) {
+            $gcc = Get-Command x86_64-w64-mingw32-gcc.exe -ErrorAction SilentlyContinue |
+                   ForEach-Object { Get-Item $_.Source }
+          }
+          if (-not $gcc) { throw 'mingw-w64 gcc not found after install' }
+          Write-Host "Using mingw gcc: $($gcc.FullName)"
+          $gcc.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$($gcc.FullName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build portable ZIP
         shell: pwsh
         run: pwsh scripts/package.ps1 -Version "${{ steps.ver.outputs.version }}"
