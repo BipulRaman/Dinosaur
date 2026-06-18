@@ -26,9 +26,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# We build the GNU (mingw-w64) Windows target explicitly so the output is the
-# same on a GNU-host dev machine and an MSVC-host CI runner.
-$Target = 'x86_64-pc-windows-gnu'
+# We build with the GNU (mingw-w64) toolchain explicitly so the output is the
+# same on a GNU-host dev machine and an MSVC-host CI runner, and so that build
+# scripts / proc-macros link with the self-contained mingw linker (no MSVC
+# `link.exe` required anywhere).
+$Toolchain = 'stable-x86_64-pc-windows-gnu'
+$Target    = 'x86_64-pc-windows-gnu'
 
 # Repo layout: <repo>/scripts/package.ps1 , <repo>/app , <repo>/dist
 $RepoRoot = Split-Path $PSScriptRoot -Parent
@@ -49,8 +52,10 @@ Write-Host "Packaging Dinosaur v$Version" -ForegroundColor Cyan
 if (-not $SkipBuild) {
     Get-Process Dinosaur -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 1
+    # Make sure the GNU toolchain (with its self-contained linker) is present.
+    rustup toolchain install $Toolchain --no-self-update | Out-Null
     Push-Location $AppDir
-    try { cargo build --release --target $Target } finally { Pop-Location }
+    try { cargo "+$Toolchain" build --release --target $Target } finally { Pop-Location }
 }
 
 # 2. Stage the required files.
