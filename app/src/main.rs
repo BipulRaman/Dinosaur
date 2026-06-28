@@ -154,7 +154,7 @@ fn setup_style(ctx: &egui::Context) {
 
     // Visuals — refined light theme matched to the landing-page mockup.
     let mut v = egui::Visuals::light();
-    let rounding = Rounding::same(7.0);
+    let rounding = Rounding::same(4.0);
 
     v.panel_fill = Color32::from_rgb(250, 250, 252); // toolbar #fafafc
     v.window_fill = Color32::from_rgb(255, 255, 255);
@@ -1694,7 +1694,7 @@ fn show_table(
                 // Spreadsheet-style border around the selected range.
                 if let Some(b) = sel_bounds.get() {
                     ui.painter()
-                        .rect_stroke(b, 0.0, egui::Stroke::new(2.0, SEL_BORDER));
+                        .rect_stroke(b, 0.0, egui::Stroke::new(1.0, SEL_BORDER));
                 }
             });
     });
